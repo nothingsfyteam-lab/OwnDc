@@ -133,14 +133,83 @@ module.exports = (io) => {
 
     // ==================== SERVER JOIN/LEAVE ====================
 
+    // Server invitation functionality
+    socket.on('invite-to-server', (data) => {
+      const { serverId, targetUserId } = data;
+      const targetSocketId = userSockets.get(targetUserId);
+      
+      if (targetSocketId) {
+        io.to(targetSocketId).emit('server-invitation', {
+          serverId,
+          inviter: {
+            id: currentUser?.id,
+            username: currentUser?.username,
+            avatar: currentUser?.avatar
+          }
+        });
+        
+        // Store pending invitation temporarily
+        if (!io.pendingInvites) io.pendingInvites = new Map();
+        if (!io.pendingInvites.has(targetUserId)) {
+          io.pendingInvites.set(targetUserId, new Set());
+        }
+        io.pendingInvites.get(targetUserId).add(serverId);
+      }
+    });
+    
+    socket.on('accept-server-invite', (serverId) => {
+      if (!io.pendingInvites) io.pendingInvites = new Map();
+      
+      // Remove from pending invitations
+      for (const [userId, serverIds] of io.pendingInvites.entries()) {
+        if (serverIds.has(serverId) && userId === currentUser?.id) {
+          serverIds.delete(serverId);
+          
+          // Join server
+          socket.join(`server:${serverId}`);
+          currentServer = serverId;
+          socket.to(`server:${serverId}`).emit('user-joined-server', {
+            userId: currentUser?.id,
+            username: currentUser?.username,
+            serverId
+          });
+          
+          // Notify all clients about updated members
+          io.to(`server:${serverId}`).emit('server-members-updated', {
+            serverId,
+            action: 'add',
+            userId: currentUser?.id,
+            username: currentUser?.username
+          });
+          
+          break;
+        }
+      }
+    });
+    
+    // Handle server joining (including invitation)
     socket.on('join-server', (serverId) => {
       currentServer = serverId;
       socket.join(`server:${serverId}`);
-      socket.to(`server:${serverId}`).emit('user-joined-server', {
-        userId: currentUser?.id,
-        username: currentUser?.username,
-        serverId
-      });
+      
+      // Check if this is a new member
+      const isNewMember = currentServer && !io.pendingInvites?.get(currentUser?.id)?.has(serverId);
+      
+      if (isNewMember) {
+        socket.to(`server:${serverId}`).emit('user-joined-server', {
+          userId: currentUser?.id,
+          username: currentUser?.username,
+          serverId
+        });
+        
+        // Notify all clients about updated members
+        io.to(`server:${serverId}`).emit('server-members-updated', {
+          serverId,
+          action: 'add',
+          userId: currentUser?.id,
+          username: currentUser?.username
+        });
+      }
     });
 
     socket.on('leave-server', (serverId) => {
@@ -261,20 +330,40 @@ module.exports = (io) => {
 
     // ==================== DIRECT MESSAGES ====================
 
+    // Handle both 1-on-1 and group DMs
     socket.on('send-dm', (data) => {
       const { receiverId, content, messageId, timestamp, groupId } = data;
       
       if (groupId) {
-        // Group DM
-        socket.to(`group:${groupId}`).emit('new-dm', {
+        // Add group creator info if exists
+        const groupMembers = io.of('/').adapter.rooms.get(`group:${groupId}`);
+        const groupData = {
           id: messageId,
           content,
           timestamp,
           sender_id: currentUser?.id,
           sender_username: currentUser?.username,
           sender_avatar: currentUser?.avatar,
-          group_id: groupId
-        });
+          group_id: groupId,
+          member_count: groupMembers ? groupMembers.size : 1
+        };
+        
+        // Create group if it doesn't exist
+        socket.join(`group:${groupId}`);
+        
+        // Broadcast to group members
+        io.to(`group:${groupId}`).emit('new-dm', groupData);
+        
+        // Send to creator if they're not in the group
+        if (!groupMembers) {
+          const creatorId = groupId.split('_')[0]; // Assuming group ID format: "{creatorId}_..."
+          if (creatorId !== currentUser?.id) {
+            const creatorSocket = userSockets.get(parseInt(creatorId));
+            if (creatorSocket) {
+              io.to(creatorSocket).emit('new-dm', groupData);
+            }
+          }
+        }
       } else {
         // 1-on-1 DM
         const receiverSocketId = userSockets.get(receiverId);
