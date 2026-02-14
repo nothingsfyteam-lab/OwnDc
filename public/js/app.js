@@ -72,7 +72,7 @@ function setupGlobalEventListeners() {
 
 async function checkAuth() {
   try {
-    const response = await fetch('/api/auth/me');
+    const response = await fetch('/api/auth/me', { credentials: 'same-origin' });
     if (response.ok) {
       currentUser = await response.json();
       showApp();
@@ -126,6 +126,7 @@ async function handleLogin() {
     const response = await fetch('/api/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
       body: JSON.stringify({ email, password })
     });
 
@@ -162,6 +163,7 @@ async function handleRegister() {
     const response = await fetch('/api/auth/register', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
       body: JSON.stringify({ username, email, password })
     });
 
@@ -183,7 +185,7 @@ async function logout() {
     if (currentVoiceChannel) {
       leaveVoiceChannel();
     }
-    await fetch('/api/auth/logout', { method: 'POST' });
+    await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' });
     if (socket) socket.disconnect();
     currentUser = null;
     showAuth();
@@ -223,6 +225,7 @@ async function saveProfile() {
     const response = await fetch('/api/users/me', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
       body: JSON.stringify({
         username,
         email,
@@ -276,6 +279,7 @@ async function changePassword() {
     const response = await fetch('/api/users/me/password', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
       body: JSON.stringify({ currentPassword, newPassword })
     });
 
@@ -531,7 +535,7 @@ async function loadInitialData() {
 
 async function loadServers() {
   try {
-    const response = await fetch('/api/servers');
+    const response = await fetch('/api/servers', { credentials: 'same-origin' });
     if (response.ok) {
       servers = await response.json();
       renderServerList();
@@ -543,7 +547,7 @@ async function loadServers() {
 
 async function loadServer(serverId) {
   try {
-    const response = await fetch(`/api/servers/${serverId}`);
+    const response = await fetch(`/api/servers/${serverId}`, { credentials: 'same-origin' });
     if (response.ok) {
       const data = await response.json();
       currentServer = data.server;
@@ -567,7 +571,7 @@ async function loadServer(serverId) {
 
 async function loadFriends() {
   try {
-    const response = await fetch('/api/friends');
+    const response = await fetch('/api/friends', { credentials: 'same-origin' });
     if (response.ok) {
       const data = await response.json();
       friends = data.friends;
@@ -583,7 +587,7 @@ async function loadFriends() {
 
 async function loadGroupDMs() {
   try {
-    const response = await fetch('/api/groups');
+    const response = await fetch('/api/groups', { credentials: 'same-origin' });
     if (response.ok) {
       groupDMs = await response.json();
       renderGroupDMs();
@@ -976,7 +980,7 @@ function showHome() {
 // ==================== MESSAGES ====================
 async function loadChannelMessages(channelId) {
   try {
-    const response = await fetch(`/api/channels/${channelId}/messages`);
+    const response = await fetch(`/api/channels/${channelId}/messages`, { credentials: 'same-origin' });
     if (response.ok) {
       const messages = await response.json();
       messages.forEach(msg => displayMessage(msg));
@@ -989,7 +993,7 @@ async function loadChannelMessages(channelId) {
 
 async function loadDMMessages(userId) {
   try {
-    const response = await fetch(`/api/messages/dm/${userId}`);
+    const response = await fetch(`/api/messages/dm/${userId}`, { credentials: 'same-origin' });
     if (response.ok) {
       const messages = await response.json();
       messages.forEach(msg => displayMessage(msg));
@@ -1002,7 +1006,7 @@ async function loadDMMessages(userId) {
 
 async function loadGroupMessages(groupId) {
   try {
-    const response = await fetch(`/api/groups/${groupId}`);
+    const response = await fetch(`/api/groups/${groupId}`, { credentials: 'same-origin' });
     if (response.ok) {
       const data = await response.json();
       if (data.messages) {
@@ -1057,6 +1061,7 @@ async function sendMessage() {
       const response = await fetch(`/api/messages/dm/${currentChannel.userId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
         body: JSON.stringify({ content })
       });
       
@@ -1074,6 +1079,7 @@ async function sendMessage() {
       const response = await fetch('/api/messages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
         body: JSON.stringify({ channelId: currentChannel.groupId, content })
       });
       
@@ -1085,6 +1091,7 @@ async function sendMessage() {
       const response = await fetch('/api/messages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
         body: JSON.stringify({ channelId: currentChannel.id, content })
       });
       
@@ -1157,6 +1164,7 @@ async function createServer() {
     const response = await fetch('/api/servers', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
       body: JSON.stringify({ name })
     });
     
@@ -1190,7 +1198,8 @@ async function joinServer() {
   
   try {
     const response = await fetch(`/api/servers/join/${code}`, {
-      method: 'POST'
+      method: 'POST',
+      credentials: 'same-origin'
     });
     
     if (response.ok) {
@@ -1249,6 +1258,7 @@ async function createChannel() {
     const response = await fetch('/api/channels', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
       body: JSON.stringify({ 
         name, 
         type: selectedChannelType,
@@ -1375,6 +1385,7 @@ async function createGroup() {
     const response = await fetch('/api/groups', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
       body: JSON.stringify({ 
         name, 
         memberIds: selectedFriendsForGroup 
@@ -1485,6 +1496,7 @@ async function sendFriendRequest() {
     const response = await fetch('/api/friends/request', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
       body: JSON.stringify({ username })
     });
     
@@ -1512,6 +1524,7 @@ async function acceptFriendRequest(friendshipId) {
     const response = await fetch('/api/friends/accept', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
       body: JSON.stringify({ friendshipId })
     });
     
@@ -1530,6 +1543,7 @@ async function declineFriendRequest(friendshipId) {
     await fetch('/api/friends/decline', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
       body: JSON.stringify({ friendshipId })
     });
     loadFriends();
@@ -2701,7 +2715,7 @@ async function toggleScreenSharing() {
 // Add members to server function
 async function showAddServerMembers() {
   try {
-    const response = await fetch('/api/friends');
+    const response = await fetch('/api/friends', { credentials: 'same-origin' });
     if (response.ok) {
       const friendsList = await response.json();
       
@@ -2763,6 +2777,7 @@ async function addMembersToServer() {
     const response = await fetch(`/api/servers/${currentServer}/members`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
       body: JSON.stringify({ userIds: selectedFriends })
     });
     
@@ -2771,7 +2786,7 @@ async function addMembersToServer() {
       closeModal('add-server-members-modal');
       
       // Reload server members
-      const membersResponse = await fetch(`/api/servers/${currentServer}/members`);
+      const membersResponse = await fetch(`/api/servers/${currentServer}/members`, { credentials: 'same-origin' });
       if (membersResponse.ok) {
         serverMembers = await membersResponse.json();
       }
