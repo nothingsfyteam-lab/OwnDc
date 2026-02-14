@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OwnDc - Voice & Chat Platform</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="alternate icon" href="/favicon.ico">
+</head>
+<body>
+  <!-- Auth Screens -->
+  <div id="auth-container" class="auth-container">
+    <div class="auth-box">
+      <div class="auth-logo">
+        <i class="fas fa-comments"></i>
+        <h1>OwnDc</h1>
+      </div>
+      
+      <!-- Login Form -->
+      <div id="login-form" class="auth-form">
+        <h2>Welcome back!</h2>
+        <p class="auth-subtitle">We're so excited to see you again!</p>
+        
+        <div class="form-group">
+          <label for="login-email">EMAIL</label>
+          <input type="email" id="login-email" placeholder="Enter your email">
+        </div>
+        
+        <div class="form-group">
+          <label for="login-password">PASSWORD</label>
+          <input type="password" id="login-password" placeholder="Enter your password">
+        </div>
+        
+        <button class="auth-btn" onclick="handleLogin()">Log In</button>
+        
+        <p class="auth-switch">
+          Need an account? <a href="#" onclick="showRegister()">Register</a>
+        </p>
+        
+        <div id="login-error" class="auth-error"></div>
+      </div>
+      
+      <!-- Register Form -->
+      <div id="register-form" class="auth-form hidden">
+        <h2>Create an account</h2>
+        
+        <div class="form-group">
+          <label for="register-username">USERNAME</label>
+          <input type="text" id="register-username" placeholder="Choose a username">
+        </div>
+        
+        <div class="form-group">
+          <label for="register-email">EMAIL</label>
+          <input type="email" id="register-email" placeholder="Enter your email">
+        </div>
+        
+        <div class="form-group">
+          <label for="register-password">PASSWORD</label>
+          <input type="password" id="register-password" placeholder="Create a password">
+        </div>
+        
+        <button class="auth-btn" onclick="handleRegister()">Continue</button>
+        
+        <p class="auth-switch">
+          Already have an account? <a href="#" onclick="showLogin()">Log In</a>
+        </p>
+        
+        <div id="register-error" class="auth-error"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main App -->
+  <div id="app-container" class="app-container hidden">
+    <!-- Server Sidebar -->
+    <div class="server-sidebar">
+      <div class="server-icon home active" onclick="showHome()">
+        <i class="fas fa-home"></i>
+        <div class="server-tooltip">Home</div>
+      </div>
+      <div class="server-divider"></div>
+      <div id="server-list"></div>
+      <div class="server-icon add" onclick="showCreateChannel()">
+        <i class="fas fa-plus"></i>
+        <div class="server-tooltip">Add Channel</div>
+      </div>
+    </div>
+
+    <!-- Channel Sidebar -->
+    <div class="channel-sidebar">
+      <div class="channel-header">
+        <h3>OwnDc</h3>
+      </div>
+      
+      <div class="channel-section">
+        <div class="section-header">
+          <i class="fas fa-chevron-down"></i>
+          <span>TEXT CHANNELS</span>
+        </div>
+        <div id="text-channels" class="channel-list"></div>
+      </div>
+      
+      <div class="channel-section">
+        <div class="section-header">
+          <i class="fas fa-chevron-down"></i>
+          <span>VOICE CHANNELS</span>
+        </div>
+        <div id="voice-channels" class="channel-list"></div>
+      </div>
+
+      <div class="channel-section">
+        <div class="section-header" onclick="toggleSection('friends-list')">
+          <i class="fas fa-chevron-down" id="friends-chevron"></i>
+          <span>FRIENDS</span>
+        </div>
+        <div id="friends-list" class="friends-list"></div>
+      </div>
+
+      <div class="channel-section">
+        <div class="section-header" onclick="toggleSection('groups-list')">
+          <i class="fas fa-chevron-down" id="groups-chevron"></i>
+          <span>GROUPS</span>
+        </div>
+        <div id="groups-list" class="groups-list"></div>
+      </div>
+      
+      <div class="user-panel">
+        <div class="user-info">
+          <div class="user-avatar" id="user-avatar"></div>
+          <div class="user-details">
+            <span class="user-name" id="user-name"></span>
+            <span class="user-status" id="user-status">Online</span>
+          </div>
+        </div>
+        <div class="user-actions">
+          <button onclick="showAddFriend()" title="Add Friend"><i class="fas fa-user-plus"></i></button>
+          <button onclick="showCreateGroup()" title="Create Group"><i class="fas fa-users"></i></button>
+          <button onclick="logout()" title="Logout"><i class="fas fa-sign-out-alt"></i></button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="main-content">
+      <!-- Channel/DM Header -->
+      <div class="content-header" id="content-header">
+        <div class="header-info">
+          <i class="fas fa-hashtag" id="header-icon"></i>
+          <h2 id="header-title">Welcome</h2>
+        </div>
+        <div class="header-actions">
+          <button class="header-btn" id="voice-join-btn" onclick="toggleVoiceChannel()" style="display: none;">
+            <i class="fas fa-phone"></i> Join Voice
+          </button>
+          <button class="header-btn" onclick="showChannelMembers()">
+            <i class="fas fa-users"></i> Members
+          </button>
+        </div>
+      </div>
+
+      <!-- Messages Area -->
+      <div class="messages-container" id="messages-container">
+        <div class="welcome-screen" id="welcome-screen">
+          <i class="fas fa-comments"></i>
+          <h2>Welcome to OwnDc</h2>
+          <p>Select a channel to start chatting or join a voice channel to talk with friends.</p>
+        </div>
+        <div class="messages-list" id="messages-list"></div>
+      </div>
+
+      <!-- Message Input -->
+      <div class="message-input-container" id="message-input-container" style="display: none;">
+        <div class="typing-indicator" id="typing-indicator"></div>
+        <div class="message-input-wrapper">
+          <button class="input-btn" title="Add attachment"><i class="fas fa-plus-circle"></i></button>
+          <input type="text" id="message-input" placeholder="Message #general" onkeypress="handleMessageKeypress(event)" oninput="handleTyping()">
+          <button class="input-btn" onclick="sendMessage()"><i class="fas fa-paper-plane"></i></button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Voice Call Overlay -->
+  <div id="voice-overlay" class="voice-overlay hidden">
+    <div class="voice-container">
+      <div class="voice-header">
+        <h3><i class="fas fa-phone-alt"></i> Voice Channel</h3>
+        <button class="voice-close" onclick="leaveVoiceChannel()">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+      <div class="voice-participants" id="voice-participants"></div>
+      <div class="voice-controls">
+        <button class="voice-btn" id="mute-btn" onclick="toggleMute()">
+          <i class="fas fa-microphone"></i>
+          <span>Mute</span>
+        </button>
+        <button class="voice-btn" id="deafen-btn" onclick="toggleDeafen()">
+          <i class="fas fa-headphones"></i>
+          <span>Deafen</span>
+        </button>
+        <button class="voice-btn disconnect" onclick="leaveVoiceChannel()">
+          <i class="fas fa-phone-slash"></i>
+          <span>Disconnect</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Add Friend Modal -->
+  <div id="add-friend-modal" class="modal hidden">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>ADD FRIEND</h3>
+        <button class="modal-close" onclick="closeModal('add-friend-modal')"><i class="fas fa-times"></i></button>
+      </div>
+      <p class="modal-desc">You can add friends with their username.</p>
+      <div class="modal-input-group">
+        <input type="text" id="friend-username" placeholder="Enter a username">
+        <button onclick="sendFriendRequest()">Send Friend Request</button>
+      </div>
+      <div id="friend-requests-list" class="friend-requests-list"></div>
+    </div>
+  </div>
+
+  <!-- Create Channel Modal -->
+  <div id="create-channel-modal" class="modal hidden">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>CREATE CHANNEL</h3>
+        <button class="modal-close" onclick="closeModal('create-channel-modal')"><i class="fas fa-times"></i></button>
+      </div>
+      <div class="modal-form">
+        <div class="form-group">
+          <label>CHANNEL TYPE</label>
+          <div class="channel-type-selector">
+            <button class="type-btn active" data-type="text" onclick="selectChannelType('text')">
+              <i class="fas fa-hashtag"></i>
+              <span>Text Channel</span>
+            </button>
+            <button class="type-btn" data-type="voice" onclick="selectChannelType('voice')">
+              <i class="fas fa-volume-up"></i>
+              <span>Voice Channel</span>
+            </button>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>CHANNEL NAME</label>
+          <input type="text" id="channel-name" placeholder="new-channel">
+        </div>
+        <button class="modal-btn" onclick="createChannel()">Create Channel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Create Group Modal -->
+  <div id="create-group-modal" class="modal hidden">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>CREATE GROUP</h3>
+        <button class="modal-close" onclick="closeModal('create-group-modal')"><i class="fas fa-times"></i></button>
+      </div>
+      <div class="modal-form">
+        <div class="form-group">
+          <label>GROUP NAME</label>
+          <input type="text" id="group-name" placeholder="My Group">
+        </div>
+        <button class="modal-btn" onclick="createGroup()">Create Group</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Notifications -->
+  <div id="notifications" class="notifications"></div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/js/app.js"></script>
+</body>
+</html>
