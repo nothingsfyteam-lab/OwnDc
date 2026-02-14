@@ -400,8 +400,8 @@ function initializeSocket() {
 
   socket.on('incoming-call', (data) => {
     const { callId, callType, caller } = data;
-    // Store caller info
-    currentDirectCall = caller;
+    // Store caller info with call type
+    currentDirectCall = { ...caller, callType };
     currentCallId = callId;
     showIncomingCallNotification(callId, callType, caller);
   });
@@ -1946,11 +1946,33 @@ async function acceptIncomingCall() {
     // Close the incoming call modal immediately
     closeAllModals();
     
-    // Request microphone
-    localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    // Determine if this is a video call
+    const isVideoCall = currentDirectCall.callType === 'video';
+    
+    // Request microphone and optionally camera
+    const constraints = {
+      audio: true,
+      video: isVideoCall ? { width: 1280, height: 720 } : false
+    };
+    
+    localStream = await navigator.mediaDevices.getUserMedia(constraints);
+    
+    // Store video stream if it's a video call
+    if (isVideoCall) {
+      localVideoStream = localStream;
+      directCallVideoOn = true;
+    }
     
     // Create peer connection with caller's ID
     directCallPC = createDirectCallPeerConnection(currentDirectCall.id);
+    
+    // Display local video if video call
+    if (isVideoCall) {
+      const localVideo = document.getElementById('local-video-direct');
+      if (localVideo) {
+        localVideo.srcObject = localStream;
+      }
+    }
     
     // If we have a pending offer, process it now
     if (window.pendingCallOffer && window.pendingCallOffer.callId === currentCallId) {
@@ -1969,13 +1991,13 @@ async function acceptIncomingCall() {
     // Emit acceptance
     socket.emit('call-accept', { callId: currentCallId });
     
-    showCallInterface(currentDirectCall, 'voice');
+    showCallInterface(currentDirectCall, isVideoCall ? 'video' : 'voice');
     startCallTimer();
     
     showNotification('Call connected', 'success');
   } catch (error) {
     console.error('Error accepting call:', error);
-    showNotification('Could not access microphone: ' + error.message, 'error');
+    showNotification('Could not access media: ' + error.message, 'error');
     rejectIncomingCall();
   }
 }
@@ -2018,6 +2040,12 @@ async function initiateDirectCall(friendId, friendName, friendAvatar, callType =
     };
     localStream = await navigator.mediaDevices.getUserMedia(constraints);
     
+    // Store video stream if it's a video call
+    if (callType === 'video') {
+      localVideoStream = localStream;
+      directCallVideoOn = true;
+    }
+    
     // Generate call ID
     currentCallId = 'call_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
     
@@ -2029,6 +2057,14 @@ async function initiateDirectCall(friendId, friendName, friendAvatar, callType =
     
     // Create peer connection
     directCallPC = createDirectCallPeerConnection(friendId);
+    
+    // Display local video if video call
+    if (callType === 'video') {
+      const localVideo = document.getElementById('local-video-direct');
+      if (localVideo) {
+        localVideo.srcObject = localStream;
+      }
+    }
     
     // Create and send offer
     const offer = await directCallPC.createOffer();
@@ -2064,38 +2100,53 @@ function createDirectCallPeerConnection(remoteUserId) {
       { urls: 'stun:stun1.l.google.com:19302' },
       { urls: 'stun:stun2.l.google.com:19302' },
       { urls: 'stun:numb.viagenie.ca:3478' },
-      { urls: 'stun:stun.stunprotocol.org:3478' }
+      { urls: 'stun:stun.stunprotocol.org:3478' },
+      { urls: 'stun:stunserver.stunprotocol.org:3478' }
     ]
   });
   
   // Add local stream tracks
   if (localStream) {
+    console.log('Adding local tracks:', localStream.getTracks().map(t => t.kind));
     localStream.getTracks().forEach(track => {
       pc.addTrack(track, localStream);
     });
   }
   
+  // Create audio element for remote audio
+  let remoteAudio = document.getElementById('remote-audio-direct');
+  if (!remoteAudio) {
+    remoteAudio = document.createElement('audio');
+    remoteAudio.id = 'remote-audio-direct';
+    remoteAudio.autoplay = true;
+    remoteAudio.controls = false;
+    remoteAudio.muted = false;
+    remoteAudio.playsInline = true;
+    remoteAudio.style.display = 'none';
+    document.body.appendChild(remoteAudio);
+  }
+  
   // Handle remote stream
+  let remoteStream = null;
+  
   pc.ontrack = (event) => {
-    console.log('Remote track received:', event.track.kind);
-    const remoteStream = event.streams[0];
+    console.log('Remote track received:', event.track.kind, event.track.enabled);
+    
+    // Store remote stream reference
+    if (event.streams.length > 0) {
+      remoteStream = event.streams[0];
+    }
     
     if (event.track.kind === 'audio') {
-      // Handle audio track
-      let remoteAudio = document.getElementById('remote-audio-direct');
-      if (!remoteAudio) {
-        remoteAudio = document.createElement('audio');
-        remoteAudio.id = 'remote-audio-direct';
-        remoteAudio.autoplay = true;
-        remoteAudio.playsInline = true;
-        document.body.appendChild(remoteAudio);
+      console.log('Setting audio srcObject');
+      if (remoteStream) {
+        remoteAudio.srcObject = remoteStream;
+        remoteAudio.play().catch(e => console.log('Audio play error:', e));
       }
-      remoteAudio.srcObject = remoteStream;
-      remoteAudio.play().catch(e => console.log('Audio play error:', e));
     } else if (event.track.kind === 'video') {
-      // Handle video track
+      console.log('Video track received');
       const remoteVideo = document.getElementById('remote-video-direct');
-      if (remoteVideo) {
+      if (remoteVideo && remoteStream) {
         remoteVideo.srcObject = remoteStream;
       }
     }
@@ -2118,6 +2169,11 @@ function createDirectCallPeerConnection(remoteUserId) {
     if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed' || pc.connectionState === 'closed') {
       endDirectCall();
     }
+  };
+  
+  // Log ICE connection state
+  pc.oniceconnectionstatechange = () => {
+    console.log('ICE connection state:', pc.iceConnectionState);
   };
   
   return pc;
@@ -2189,6 +2245,17 @@ function endDirectCall() {
     localStream = null;
   }
   
+  if (localVideoStream) {
+    localVideoStream.getTracks().forEach(track => track.stop());
+    localVideoStream = null;
+  }
+  
+  if (screenStream) {
+    screenStream.getTracks().forEach(track => track.stop());
+    screenStream = null;
+    isScreenSharing = false;
+  }
+  
   try {
     const ringtonAudio = document.getElementById('ringtone-audio');
     if (ringtonAudio) {
@@ -2200,6 +2267,16 @@ function endDirectCall() {
     if (remoteAudio) {
       remoteAudio.srcObject = null;
       remoteAudio.pause();
+    }
+    
+    const localVideo = document.getElementById('local-video-direct');
+    if (localVideo) {
+      localVideo.srcObject = null;
+    }
+    
+    const remoteVideo = document.getElementById('remote-video-direct');
+    if (remoteVideo) {
+      remoteVideo.srcObject = null;
     }
   } catch (e) {}
   
@@ -2264,45 +2341,172 @@ function toggleDirectCallMute() {
 }
 
 function toggleDirectCallVideo() {
-  if (localStream) {
-    directCallVideoOn = !directCallVideoOn;
+  if (!directCallPC) {
+    showNotification('No active call', 'error');
+    return;
+  }
+  
+  if (!directCallVideoOn) {
+    // Enable video
+    navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720 } }).then(videoStream => {
+      const videoTrack = videoStream.getVideoTracks()[0];
+      
+      if (!videoTrack) {
+        showNotification('Could not get video track', 'error');
+        return;
+      }
+      
+      // Store the video stream
+      localVideoStream = videoStream;
+      directCallVideoOn = true;
+      
+      // Find existing video sender or add new track
+      const videoSender = directCallPC.getSenders().find(s => s.track?.kind === 'video');
+      
+      if (videoSender) {
+        // Replace existing video track
+        videoSender.replaceTrack(videoTrack).catch(e => {
+          console.error('Error replacing video track:', e);
+          showNotification('Could not enable video', 'error');
+          directCallVideoOn = false;
+        });
+      } else {
+        // Add new video track
+        directCallPC.addTrack(videoTrack, videoStream).catch(e => {
+          console.error('Error adding video track:', e);
+          showNotification('Could not enable video', 'error');
+          directCallVideoOn = false;
+        });
+      }
+      
+      // Show video locally
+      const localVideo = document.getElementById('local-video-direct');
+      if (localVideo) {
+        localVideo.srcObject = videoStream;
+      }
+      
+      // Update button
+      const btn = document.getElementById('video-camera-btn');
+      if (btn) {
+        btn.style.background = 'var(--success)';
+      }
+      
+      showNotification('Camera enabled', 'success');
+    }).catch(error => {
+      console.error('Could not access camera:', error);
+      showNotification('Could not access camera: ' + error.message, 'error');
+      directCallVideoOn = false;
+    });
+  } else {
+    // Disable video
+    directCallVideoOn = false;
     
-    if (directCallVideoOn) {
-      navigator.mediaDevices.getUserMedia({ video: true }).then(videoStream => {
-        const videoTrack = videoStream.getVideoTracks()[0];
-        
-        // Replace audio track or add video track
-        const sender = directCallPC?.getSenders().find(s => s.track?.kind === 'video');
-        if (sender) {
-          sender.replaceTrack(videoTrack);
-        } else {
-          directCallPC?.addTrack(videoTrack, localStream);
-        }
-        
-        // Show video locally
-        const localVideo = document.getElementById('local-video-direct');
-        if (localVideo) {
-          localVideo.srcObject = videoStream;
-        }
-      });
-    } else {
-      if (directCallPC) {
-        const videoSender = directCallPC.getSenders().find(s => s.track?.kind === 'video');
-        if (videoSender) {
-          videoSender.track?.stop();
-          videoSender.replaceTrack(null);
-        }
+    if (directCallPC) {
+      const videoSender = directCallPC.getSenders().find(s => s.track?.kind === 'video');
+      if (videoSender && videoSender.track) {
+        videoSender.track.stop();
+        videoSender.replaceTrack(null).catch(e => console.error('Error removing video:', e));
       }
     }
     
+    // Stop local video stream
+    if (localVideoStream) {
+      localVideoStream.getTracks().forEach(track => track.stop());
+      localVideoStream = null;
+    }
+    
+    // Clear local video
+    const localVideo = document.getElementById('local-video-direct');
+    if (localVideo) {
+      localVideo.srcObject = null;
+    }
+    
+    // Update button
     const btn = document.getElementById('video-camera-btn');
     if (btn) {
-      if (directCallVideoOn) {
-        btn.style.background = 'var(--success)';
+      btn.style.background = '';
+    }
+    
+    showNotification('Camera disabled', 'info');
+  }
+}
+
+async function toggleScreenSharing() {
+  if (!directCallPC) {
+    showNotification('No active call', 'error');
+    return;
+  }
+  
+  try {
+    if (isScreenSharing) {
+      // Stop screen sharing
+      isScreenSharing = false;
+      
+      // Stop screen stream tracks
+      if (screenStream) {
+        screenStream.getTracks().forEach(track => track.stop());
+        screenStream = null;
+      }
+      
+      // Replace screen track with camera track if video was on, otherwise mute
+      if (directCallVideoOn && localVideoStream) {
+        const videoTrack = localVideoStream.getVideoTracks()[0];
+        const sender = directCallPC.getSenders().find(s => s.track?.kind === 'video');
+        if (sender && videoTrack) {
+          await sender.replaceTrack(videoTrack);
+        }
       } else {
-        btn.style.background = '';
+        const sender = directCallPC.getSenders().find(s => s.track?.kind === 'video');
+        if (sender) {
+          await sender.replaceTrack(null);
+        }
+      }
+      
+      showNotification('Screen sharing stopped', 'info');
+    } else {
+      // Start screen sharing
+      screenStream = await navigator.mediaDevices.getDisplayMedia({
+        video: { 
+          cursor: 'always',
+          displaySurface: 'monitor' 
+        },
+        audio: false
+      });
+      
+      const screenTrack = screenStream.getVideoTracks()[0];
+      
+      // Replace video with screen
+      const sender = directCallPC.getSenders().find(s => s.track?.kind === 'video');
+      if (sender) {
+        await sender.replaceTrack(screenTrack);
+      } else {
+        directCallPC.addTrack(screenTrack, screenStream);
+      }
+      
+      // Handle screen share stop
+      screenTrack.onended = () => {
+        toggleScreenSharing();
+      };
+      
+      isScreenSharing = true;
+      showNotification('Screen sharing started', 'success');
+    }
+    
+    // Update button state
+    const screenBtn = document.getElementById('screen-share-btn');
+    if (screenBtn) {
+      if (isScreenSharing) {
+        screenBtn.style.background = 'var(--success)';
+      } else {
+        screenBtn.style.background = '';
       }
     }
+  } catch (error) {
+    if (error.name !== 'NotAllowedError') {
+      console.error('Screen sharing error:', error);
+      showNotification('Could not share screen: ' + error.message, 'error');
+    }
+    isScreenSharing = false;
   }
 }
 
