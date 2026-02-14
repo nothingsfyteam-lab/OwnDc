@@ -197,14 +197,14 @@ async function logout() {
 // ==================== PROFILE MANAGEMENT ====================
 function showEditProfile() {
   if (!currentUser) return;
-  
+
   document.getElementById('profile-username').value = currentUser.username || '';
   document.getElementById('profile-email').value = currentUser.email || '';
   document.getElementById('profile-bio').value = currentUser.bio || '';
   document.getElementById('profile-avatar').value = currentUser.avatar || '';
   document.getElementById('profile-banner').value = currentUser.banner || '';
   document.getElementById('profile-status').value = currentUser.custom_status || '';
-  
+
   openModal('edit-profile-modal');
 }
 
@@ -305,7 +305,7 @@ function initializeSocket() {
   // For localhost: auto-detect
   // For production/Railway: use current host
   const socketURL = window.location.origin;
-  
+
   socket = io(socketURL, {
     reconnection: true,
     reconnectionDelay: 1000,
@@ -352,7 +352,7 @@ function initializeSocket() {
 
   socket.on('new-dm', (message) => {
     if ((currentView === 'dm' && currentChannel?.userId === message.sender_id) ||
-        (currentView === 'group' && currentChannel?.groupId === message.group_id)) {
+      (currentView === 'group' && currentChannel?.groupId === message.group_id)) {
       displayMessage(message);
       scrollToBottom();
     }
@@ -431,10 +431,17 @@ function initializeSocket() {
   // ==================== DIRECT CALL HANDLERS ====================
 
   socket.on('incoming-call', (data) => {
-    const { callId, callType, caller } = data;
+    const { callId, callType, caller, offer } = data;
     // Store caller info with call type
     currentDirectCall = { ...caller, callType };
     currentCallId = callId;
+
+    // Store the offer immediately
+    if (offer) {
+      console.log('Received offer with incoming call');
+      window.pendingCallOffer = { callId, userId: caller.id, offer };
+    }
+
     showIncomingCallNotification(callId, callType, caller);
   });
 
@@ -468,7 +475,7 @@ function initializeSocket() {
       console.log('Received call-offer from:', userId);
       // Store the offer for when user accepts
       window.pendingCallOffer = { callId, userId, offer };
-      
+
       // If localStream is already available, process immediately
       if (localStream && !directCallPC) {
         console.log('Local stream already available, creating peer connection');
@@ -554,14 +561,14 @@ async function loadServer(serverId) {
       channels = data.channels || [];
       serverMembers = data.members || [];
       serverRoles = data.roles || [];
-      
+
       renderChannels();
       renderServerHeader();
-      
+
       if (socket) {
         socket.emit('join-server', serverId);
       }
-      
+
       renderServerList();
     }
   } catch (error) {
@@ -602,7 +609,7 @@ function updateUserPanel() {
   const userAvatar = document.getElementById('user-avatar');
   const userName = document.getElementById('user-name');
   const userStatus = document.getElementById('user-status');
-  
+
   if (userAvatar) {
     if (currentUser.avatar) {
       userAvatar.innerHTML = `<img src="${currentUser.avatar}" alt="${currentUser.username}" style="width: 100%; height: 100%; border-radius: 50%;">`;
@@ -610,7 +617,7 @@ function updateUserPanel() {
       userAvatar.textContent = currentUser.username.charAt(0).toUpperCase();
     }
   }
-  
+
   if (userName) userName.textContent = currentUser.username;
   if (userStatus) {
     userStatus.textContent = currentUser.custom_status || currentUser.status || 'Online';
@@ -620,7 +627,7 @@ function updateUserPanel() {
 function renderServerList() {
   const container = document.getElementById('server-list');
   if (!container) return;
-  
+
   container.innerHTML = '';
 
   const homeBtn = document.createElement('div');
@@ -637,14 +644,14 @@ function renderServerList() {
     const serverEl = document.createElement('div');
     serverEl.className = 'server-icon' + (currentServer?.id === server.id ? ' active' : '');
     serverEl.onclick = () => loadServer(server.id);
-    
+
     if (server.icon) {
       serverEl.innerHTML = `<img src="${server.icon}" style="width: 100%; height: 100%; border-radius: 50%;"><div class="server-tooltip">${server.name}</div>`;
     } else {
       const avatarLetter = server.name.charAt(0).toUpperCase();
       serverEl.innerHTML = `<div class="server-icon-text">${avatarLetter}</div><div class="server-tooltip">${server.name}</div>`;
     }
-    
+
     container.appendChild(serverEl);
   });
 
@@ -665,9 +672,9 @@ function renderServerHeader() {
 function renderChannels() {
   const textContainer = document.getElementById('text-channels');
   const voiceContainer = document.getElementById('voice-channels');
-  
+
   if (!textContainer || !voiceContainer) return;
-  
+
   textContainer.innerHTML = '';
   voiceContainer.innerHTML = '';
 
@@ -680,16 +687,16 @@ function renderChannels() {
     const channelEl = document.createElement('div');
     channelEl.className = 'channel-item' + (currentChannel?.id === channel.id ? ' active' : '');
     channelEl.onclick = () => selectChannel(channel);
-    
-    const icon = channel.type === 'voice' ? 'fa-volume-up' : 
-                 channel.type === 'announcement' ? 'fa-bullhorn' :
-                 channel.type === 'stage' ? 'fa-microphone' : 'fa-hashtag';
-    
+
+    const icon = channel.type === 'voice' ? 'fa-volume-up' :
+      channel.type === 'announcement' ? 'fa-bullhorn' :
+        channel.type === 'stage' ? 'fa-microphone' : 'fa-hashtag';
+
     channelEl.innerHTML = `
       <i class="fas ${icon}"></i>
       <span>${channel.name}</span>
     `;
-    
+
     if (channel.type === 'voice') {
       voiceContainer.appendChild(channelEl);
     } else {
@@ -701,7 +708,7 @@ function renderChannels() {
 function renderFriends() {
   const container = document.getElementById('friends-list');
   if (!container) return;
-  
+
   container.innerHTML = '';
 
   // Update notification badge
@@ -730,18 +737,18 @@ function renderFriends() {
     friendEl.style.alignItems = 'center';
     friendEl.style.gap = '8px';
     friendEl.style.position = 'relative';
-    
+
     const avatarLetter = friend.username.charAt(0).toUpperCase();
     const statusClass = friend.user_status || friend.status || 'offline';
     const isOnline = statusClass === 'online';
-    
+
     friendEl.innerHTML = `
       <div class="friend-avatar" style="position: relative;">${avatarLetter}
         <div class="status-indicator ${statusClass}" style="position: absolute; bottom: 0; right: 0;"></div>
       </div>
       <span class="friend-name" style="flex: 1;">${friend.username}</span>
     `;
-    
+
     // Voice call button
     const voiceBtn = document.createElement('button');
     voiceBtn.style.background = isOnline ? 'var(--success)' : 'var(--text-muted)';
@@ -763,7 +770,7 @@ function renderFriends() {
         initiateVoiceCall(friend.id, friend.username, friend.avatar || '');
       };
     }
-    
+
     // Video call button
     const videoBtn = document.createElement('button');
     videoBtn.style.background = isOnline ? '#5865F2' : 'var(--text-muted)';
@@ -785,16 +792,16 @@ function renderFriends() {
         initiateVideoCall(friend.id, friend.username, friend.avatar || '');
       };
     }
-    
+
     friendEl.appendChild(voiceBtn);
     friendEl.appendChild(videoBtn);
-    
+
     const nameEl = friendEl.querySelector('.friend-name');
     if (nameEl) {
       nameEl.style.cursor = 'pointer';
       nameEl.onclick = () => openDM(friend);
     }
-    
+
     return friendEl;
   };
 
@@ -807,11 +814,11 @@ function renderFriends() {
     header.style.padding = '8px 12px';
     header.textContent = `ONLINE — ${onlineFriends.length}`;
     section.appendChild(header);
-    
+
     onlineFriends.forEach(friend => {
       section.appendChild(renderFriendElement(friend));
     });
-    
+
     container.appendChild(section);
   }
 
@@ -824,11 +831,11 @@ function renderFriends() {
     header.style.padding = '8px 12px';
     header.textContent = `OFFLINE — ${offlineFriends.length}`;
     section.appendChild(header);
-    
+
     offlineFriends.forEach(friend => {
       section.appendChild(renderFriendElement(friend));
     });
-    
+
     container.appendChild(section);
   }
 }
@@ -836,7 +843,7 @@ function renderFriends() {
 function renderGroupDMs() {
   const container = document.getElementById('groups-list');
   if (!container) return;
-  
+
   container.innerHTML = '';
 
   if (groupDMs.length === 0) {
@@ -848,16 +855,16 @@ function renderGroupDMs() {
     const groupEl = document.createElement('div');
     groupEl.className = 'group-item' + (currentView === 'group' && currentChannel?.groupId === group.id ? ' active' : '');
     groupEl.onclick = () => openGroupDM(group);
-    
+
     const avatarLetter = group.name.charAt(0).toUpperCase();
     const memberCount = group.member_count || (group.members ? group.members.length : 0);
-    
+
     groupEl.innerHTML = `
       <div class="group-avatar">${avatarLetter}</div>
       <span class="group-name">${group.name}</span>
       <span class="group-count">${memberCount}</span>
     `;
-    
+
     container.appendChild(groupEl);
   });
 }
@@ -888,17 +895,17 @@ async function selectChannel(channel) {
   document.getElementById('header-title').textContent = channel.name;
   document.getElementById('header-icon').className = channel.type === 'voice' ? 'fas fa-volume-up' : 'fas fa-hashtag';
   document.getElementById('message-input').placeholder = `Message #${channel.name}`;
-  
+
   const voiceBtn = document.getElementById('voice-join-btn');
   if (voiceBtn) {
     voiceBtn.style.display = channel.type === 'voice' ? 'flex' : 'none';
     voiceBtn.innerHTML = '<i class="fas fa-phone"></i> Join Voice';
     voiceBtn.style.background = 'var(--success)';
   }
-  
+
   renderChannels();
   socket.emit('join-channel', channel.id);
-  
+
   if (channel.type !== 'voice') {
     await loadChannelMessages(channel.id);
   }
@@ -915,10 +922,10 @@ async function openDM(friend) {
   };
   currentView = 'dm';
   currentGroup = null;
-  
+
   updateMessageView(friend.username, 'fas fa-user', `Message @${friend.username}`);
   renderFriends();
-  
+
   await loadDMMessages(friend.id);
 }
 
@@ -933,10 +940,10 @@ async function openGroupDM(group) {
   };
   currentView = 'group';
   currentGroup = group;
-  
+
   updateMessageView(group.name, 'fas fa-users', `Message ${group.name}`);
   renderGroupDMs();
-  
+
   await loadGroupMessages(group.id);
 }
 
@@ -962,18 +969,18 @@ function showHome() {
   document.getElementById('message-input-container').style.display = 'none';
   document.getElementById('header-title').textContent = 'Welcome';
   document.getElementById('header-icon').className = 'fas fa-home';
-  
+
   const voiceBtn = document.getElementById('voice-join-btn');
   if (voiceBtn) voiceBtn.style.display = 'none';
-  
+
   const header = document.querySelector('.channel-header h3');
   if (header) header.textContent = 'OwnDc';
-  
+
   const textChannels = document.getElementById('text-channels');
   const voiceChannels = document.getElementById('voice-channels');
   if (textChannels) textChannels.innerHTML = '';
   if (voiceChannels) voiceChannels.innerHTML = '';
-  
+
   renderServerList();
 }
 
@@ -1022,15 +1029,15 @@ async function loadGroupMessages(groupId) {
 function displayMessage(message) {
   const container = document.getElementById('messages-list');
   if (!container) return;
-  
+
   const messageEl = document.createElement('div');
   messageEl.className = 'message';
   messageEl.dataset.messageId = message.id;
-  
+
   const isOwn = message.sender_id === currentUser.id;
   const avatarLetter = message.sender_username?.charAt(0).toUpperCase() || '?';
   const time = new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  
+
   messageEl.innerHTML = `
     <div class="message-avatar">${avatarLetter}</div>
     <div class="message-content">
@@ -1041,22 +1048,22 @@ function displayMessage(message) {
       <div class="message-text">${escapeHtml(message.content)}</div>
     </div>
   `;
-  
+
   container.appendChild(messageEl);
 }
 
 async function sendMessage() {
   const input = document.getElementById('message-input');
   if (!input) return;
-  
+
   const content = input.value.trim();
   if (!content || !currentChannel) return;
-  
+
   input.value = '';
-  
+
   try {
     let message;
-    
+
     if (currentView === 'dm') {
       const response = await fetch(`/api/messages/dm/${currentChannel.userId}`, {
         method: 'POST',
@@ -1064,7 +1071,7 @@ async function sendMessage() {
         credentials: 'same-origin',
         body: JSON.stringify({ content })
       });
-      
+
       if (response.ok) {
         message = await response.json();
         displayMessage(message);
@@ -1082,7 +1089,7 @@ async function sendMessage() {
         credentials: 'same-origin',
         body: JSON.stringify({ channelId: currentChannel.groupId, content })
       });
-      
+
       if (response.ok) {
         message = await response.json();
         displayMessage(message);
@@ -1094,7 +1101,7 @@ async function sendMessage() {
         credentials: 'same-origin',
         body: JSON.stringify({ channelId: currentChannel.id, content })
       });
-      
+
       if (response.ok) {
         message = await response.json();
         displayMessage(message);
@@ -1106,7 +1113,7 @@ async function sendMessage() {
         });
       }
     }
-    
+
     scrollToBottom();
   } catch (error) {
     console.error('Error sending message:', error);
@@ -1115,12 +1122,12 @@ async function sendMessage() {
 
 function handleTyping() {
   if (!currentChannel || currentView === 'dm' || currentView === 'group') return;
-  
+
   socket.emit('typing', {
     channelId: currentChannel.id,
     isTyping: true
   });
-  
+
   clearTimeout(typingTimeout);
   typingTimeout = setTimeout(() => {
     socket.emit('typing', {
@@ -1133,7 +1140,7 @@ function handleTyping() {
 function showTypingIndicator(username, isTyping) {
   const indicator = document.getElementById('typing-indicator');
   if (!indicator) return;
-  
+
   if (isTyping) {
     indicator.textContent = `${username} is typing...`;
   } else {
@@ -1159,7 +1166,7 @@ async function createServer() {
     showNotification('Please enter a server name', 'error');
     return;
   }
-  
+
   try {
     const response = await fetch('/api/servers', {
       method: 'POST',
@@ -1167,7 +1174,7 @@ async function createServer() {
       credentials: 'same-origin',
       body: JSON.stringify({ name })
     });
-    
+
     if (response.ok) {
       const server = await response.json();
       showNotification('Server created! You are now the owner.', 'success');
@@ -1195,13 +1202,13 @@ async function joinServer() {
     showNotification('Please enter an invite code', 'error');
     return;
   }
-  
+
   try {
     const response = await fetch(`/api/servers/join/${code}`, {
       method: 'POST',
       credentials: 'same-origin'
     });
-    
+
     if (response.ok) {
       const data = await response.json();
       showNotification('Joined server!', 'success');
@@ -1224,7 +1231,7 @@ function showCreateChannel() {
     showNotification('Please select a server first', 'error');
     return;
   }
-  
+
   selectedChannelType = 'text';
   updateChannelTypeUI();
   openModal('create-channel-modal');
@@ -1243,29 +1250,29 @@ function selectChannelType(type) {
 
 async function createChannel() {
   const name = document.getElementById('channel-name')?.value.trim();
-  
+
   if (!name) {
     showNotification('Please enter a channel name', 'error');
     return;
   }
-  
+
   if (!currentServer) {
     showNotification('Please select a server first', 'error');
     return;
   }
-  
+
   try {
     const response = await fetch('/api/channels', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'same-origin',
-      body: JSON.stringify({ 
-        name, 
+      body: JSON.stringify({
+        name,
         type: selectedChannelType,
-        serverId: currentServer.id 
+        serverId: currentServer.id
       })
     });
-    
+
     if (response.ok) {
       const channel = await response.json();
       showNotification(`${selectedChannelType === 'voice' ? 'Voice' : 'Text'} channel created!`, 'success');
@@ -1288,28 +1295,28 @@ async function showServerMembers() {
     showNotification('Please select a server first', 'error');
     return;
   }
-  
+
   const memberList = document.getElementById('server-members-list');
   if (!memberList) return;
-  
+
   memberList.innerHTML = '';
-  
+
   if (serverMembers.length === 0) {
     memberList.innerHTML = '<div style="padding: 16px; text-align: center; color: var(--text-muted);">No members found</div>';
   } else {
     serverMembers.forEach(member => {
       const memberEl = document.createElement('div');
       memberEl.className = 'member-item';
-      
+
       const avatarLetter = member.username.charAt(0).toUpperCase();
       const isOwner = member.id === currentServer.owner_id;
       const roles = member.roles || [];
-      
+
       let rolesHTML = '';
       if (roles.length > 0) {
         rolesHTML = `<div class="member-roles">${roles.map(r => `<span class="role-badge" style="color: ${r.color}">${r.name}</span>`).join('')}</div>`;
       }
-      
+
       memberEl.innerHTML = `
         <div class="member-avatar">${avatarLetter}</div>
         <div class="member-info">
@@ -1317,11 +1324,11 @@ async function showServerMembers() {
           ${rolesHTML}
         </div>
       `;
-      
+
       memberList.appendChild(memberEl);
     });
   }
-  
+
   openModal('server-members-modal');
 }
 
@@ -1335,26 +1342,26 @@ function showCreateGroup() {
 function renderFriendSelector() {
   const container = document.getElementById('friend-selector-list');
   if (!container) return;
-  
+
   container.innerHTML = '';
-  
+
   if (friends.length === 0) {
     container.innerHTML = '<div style="padding: 16px; text-align: center; color: var(--text-muted);">Add friends first to create a group</div>';
     return;
   }
-  
+
   friends.forEach(friend => {
     const item = document.createElement('div');
     item.className = 'friend-selector-item' + (selectedFriendsForGroup.includes(friend.id) ? ' selected' : '');
     item.onclick = () => toggleFriendForGroup(friend.id);
-    
+
     const avatarLetter = friend.username.charAt(0).toUpperCase();
     item.innerHTML = `
       <div class="friend-avatar">${avatarLetter}</div>
       <span class="friend-name">${friend.username}</span>
       ${selectedFriendsForGroup.includes(friend.id) ? '<i class="fas fa-check"></i>' : ''}
     `;
-    
+
     container.appendChild(item);
   });
 }
@@ -1375,23 +1382,23 @@ async function createGroup() {
     showNotification('Please enter a group name', 'error');
     return;
   }
-  
+
   if (selectedFriendsForGroup.length === 0) {
     showNotification('Please select at least one friend', 'error');
     return;
   }
-  
+
   try {
     const response = await fetch('/api/groups', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'same-origin',
-      body: JSON.stringify({ 
-        name, 
-        memberIds: selectedFriendsForGroup 
+      body: JSON.stringify({
+        name,
+        memberIds: selectedFriendsForGroup
       })
     });
-    
+
     if (response.ok) {
       const group = await response.json();
       showNotification('Group created!', 'success');
@@ -1419,9 +1426,9 @@ function showAddFriend() {
 function renderFriendRequests() {
   const container = document.getElementById('friend-requests-list');
   if (!container) return;
-  
+
   container.innerHTML = '';
-  
+
   // Pending requests (incoming)
   if (pendingRequests.length > 0) {
     const pendingHeader = document.createElement('div');
@@ -1429,14 +1436,14 @@ function renderFriendRequests() {
     pendingHeader.textContent = `Incoming Requests (${pendingRequests.length})`;
     pendingHeader.style.cssText = 'font-weight: 600; color: var(--primary); margin: 16px 0 8px 0; font-size: 12px; text-transform: uppercase;';
     container.appendChild(pendingHeader);
-    
+
     pendingRequests.forEach(request => {
       const requestEl = document.createElement('div');
       requestEl.className = 'friend-request-item';
       requestEl.style.cssText = 'display: flex; align-items: center; justify-content: space-between; padding: 12px; background: var(--bg-dark); border-radius: 4px; margin-bottom: 8px;';
-      
+
       const avatarLetter = request.username.charAt(0).toUpperCase();
-      
+
       requestEl.innerHTML = `
         <div style="display: flex; align-items: center; gap: 12px;">
           <div class="friend-avatar" style="width: 40px; height: 40px; border-radius: 50%; background: var(--primary); display: flex; align-items: center; justify-content: center; font-weight: 600;">${avatarLetter}</div>
@@ -1447,11 +1454,11 @@ function renderFriendRequests() {
           <button onclick="declineFriendRequest('${request.friendship_id}')" style="padding: 8px 16px; background: var(--bg-lighter); border: none; border-radius: 4px; color: var(--text-secondary); cursor: pointer; font-weight: 600;">Decline</button>
         </div>
       `;
-      
+
       container.appendChild(requestEl);
     });
   }
-  
+
   // Sent requests (outgoing)
   if (sentRequests.length > 0) {
     const sentHeader = document.createElement('div');
@@ -1459,14 +1466,14 @@ function renderFriendRequests() {
     sentHeader.textContent = `Outgoing Requests (${sentRequests.length})`;
     sentHeader.style.cssText = 'font-weight: 600; color: var(--text-secondary); margin: 16px 0 8px 0; font-size: 12px; text-transform: uppercase;';
     container.appendChild(sentHeader);
-    
+
     sentRequests.forEach(request => {
       const requestEl = document.createElement('div');
       requestEl.className = 'friend-request-item';
       requestEl.style.cssText = 'display: flex; align-items: center; justify-content: space-between; padding: 12px; background: var(--bg-dark); border-radius: 4px; margin-bottom: 8px;';
-      
+
       const avatarLetter = request.username.charAt(0).toUpperCase();
-      
+
       requestEl.innerHTML = `
         <div style="display: flex; align-items: center; gap: 12px;">
           <div class="friend-avatar" style="width: 40px; height: 40px; border-radius: 50%; background: var(--bg-lighter); display: flex; align-items: center; justify-content: center; font-weight: 600;">${avatarLetter}</div>
@@ -1474,11 +1481,11 @@ function renderFriendRequests() {
         </div>
         <span style="color: var(--text-muted); font-size: 12px;">Pending...</span>
       `;
-      
+
       container.appendChild(requestEl);
     });
   }
-  
+
   // Show message if no requests
   if (pendingRequests.length === 0 && sentRequests.length === 0) {
     container.innerHTML = '<div style="text-align: center; color: var(--text-muted); padding: 20px;">No pending friend requests</div>';
@@ -1491,7 +1498,7 @@ async function sendFriendRequest() {
     showNotification('Please enter a username', 'error');
     return;
   }
-  
+
   try {
     const response = await fetch('/api/friends/request', {
       method: 'POST',
@@ -1499,7 +1506,7 @@ async function sendFriendRequest() {
       credentials: 'same-origin',
       body: JSON.stringify({ username })
     });
-    
+
     if (response.ok) {
       const data = await response.json();
       showNotification('Friend request sent!', 'success');
@@ -1527,7 +1534,7 @@ async function acceptFriendRequest(friendshipId) {
       credentials: 'same-origin',
       body: JSON.stringify({ friendshipId })
     });
-    
+
     if (response.ok) {
       showNotification('Friend request accepted!', 'success');
       loadFriends();
@@ -1555,7 +1562,7 @@ async function declineFriendRequest(friendshipId) {
 async function callFriend(friendId) {
   const friend = friends.find(f => f.id === friendId);
   if (!friend) return;
-  
+
   try {
     await startVideoCall(friend);
   } catch (error) {
@@ -1575,28 +1582,28 @@ async function toggleVoiceChannel() {
 
 async function joinVoiceChannel() {
   if (!currentChannel || currentChannel.type !== 'voice') return;
-  
+
   try {
     localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-    
+
     currentVoiceChannel = currentChannel.id;
     document.getElementById('voice-overlay')?.classList.remove('hidden');
-    
+
     const voiceBtn = document.getElementById('voice-join-btn');
     if (voiceBtn) {
       voiceBtn.innerHTML = '<i class="fas fa-phone-slash"></i> Leave Voice';
       voiceBtn.style.background = 'var(--danger)';
     }
-    
+
     addVoiceParticipant({
       userId: currentUser.id,
       username: currentUser.username,
       avatar: currentUser.avatar,
       isSelf: true
     });
-    
+
     socket.emit('join-voice', { channelId: currentChannel.id, isVideo: false });
-    
+
     showNotification('Joined voice channel', 'success');
   } catch (error) {
     console.error('Error accessing microphone:', error);
@@ -1607,44 +1614,44 @@ async function joinVoiceChannel() {
 function leaveVoiceChannel() {
   if (currentVoiceChannel) {
     socket.emit('leave-voice', currentVoiceChannel);
-    
+
     peerConnections.forEach((pc, userId) => {
       closePeerConnection(userId);
     });
-    
+
     if (localStream) {
       localStream.getTracks().forEach(track => track.stop());
       localStream = null;
     }
-    
+
     if (localVideoStream) {
       localVideoStream.getTracks().forEach(track => track.stop());
       localVideoStream = null;
     }
-    
+
     if (screenStream) {
       screenStream.getTracks().forEach(track => track.stop());
       screenStream = null;
     }
-    
+
     currentVoiceChannel = null;
     voiceParticipants.clear();
-    
+
     // Clear all participant elements from DOM
     const container = document.getElementById('voice-participants');
     if (container) {
       container.innerHTML = '';
     }
-    
+
     document.getElementById('voice-overlay')?.classList.add('hidden');
     document.getElementById('video-overlay')?.classList.add('hidden');
-    
+
     const voiceBtn = document.getElementById('voice-join-btn');
     if (voiceBtn && currentChannel?.type === 'voice') {
       voiceBtn.innerHTML = '<i class="fas fa-phone"></i> Join Voice';
       voiceBtn.style.background = 'var(--success)';
     }
-    
+
     isMuted = false;
     isDeafened = false;
     isVideoOn = false;
@@ -1657,17 +1664,17 @@ function leaveVoiceChannel() {
 async function startVideoCall(friend) {
   try {
     localVideoStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
-    
+
     const localVideo = document.getElementById('local-video');
     if (localVideo) {
       localVideo.srcObject = localVideoStream;
     }
-    
+
     document.getElementById('video-overlay')?.classList.remove('hidden');
-    
+
     isVideoOn = true;
     updateVideoButtons();
-    
+
     showNotification('Video call started', 'success');
   } catch (error) {
     console.error('Error accessing camera:', error);
@@ -1686,7 +1693,7 @@ async function toggleScreenShare() {
       screenStream = null;
     }
     isScreenSharing = false;
-    
+
     if (isVideoOn) {
       localVideoStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
       const localVideo = document.getElementById('local-video');
@@ -1697,14 +1704,14 @@ async function toggleScreenShare() {
   } else {
     try {
       screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
-      
+
       const localVideo = document.getElementById('local-video');
       if (localVideo) {
         localVideo.srcObject = screenStream;
       }
-      
+
       isScreenSharing = true;
-      
+
       screenStream.getVideoTracks()[0].onended = () => {
         toggleScreenShare();
       };
@@ -1713,7 +1720,7 @@ async function toggleScreenShare() {
       showNotification('Could not share screen', 'error');
     }
   }
-  
+
   updateVideoButtons();
 }
 
@@ -1731,19 +1738,19 @@ function toggleVideo() {
 function toggleMute() {
   if (localStream || localVideoStream) {
     isMuted = !isMuted;
-    
+
     if (localStream) {
       localStream.getAudioTracks().forEach(track => {
         track.enabled = !isMuted;
       });
     }
-    
+
     if (localVideoStream) {
       localVideoStream.getAudioTracks().forEach(track => {
         track.enabled = !isMuted;
       });
     }
-    
+
     updateVoiceButtons();
     updateVideoButtons();
   }
@@ -1765,23 +1772,23 @@ function toggleDeafen() {
 function addVoiceParticipant(user) {
   // Remove existing if any (prevents duplicates)
   removeVoiceParticipant(user.userId);
-  
+
   voiceParticipants.set(user.userId, user);
-  
+
   const container = document.getElementById('voice-participants');
   if (!container) return;
-  
+
   const participantEl = document.createElement('div');
   participantEl.className = 'voice-participant';
   participantEl.id = `voice-participant-${user.userId}`;
-  
+
   const avatarLetter = user.username?.charAt(0).toUpperCase() || '?';
-  
+
   participantEl.innerHTML = `
     <div class="voice-participant-avatar">${avatarLetter}</div>
     <span class="voice-participant-name">${user.username}${user.isSelf ? ' (You)' : ''}</span>
   `;
-  
+
   container.appendChild(participantEl);
 }
 
@@ -1806,18 +1813,18 @@ function updateParticipantState(data) {
 function updateVoiceButtons() {
   const muteBtn = document.getElementById('mute-btn');
   const deafenBtn = document.getElementById('deafen-btn');
-  
+
   if (muteBtn) {
     muteBtn.classList.toggle('muted', isMuted);
-    muteBtn.innerHTML = isMuted ? 
-      '<i class="fas fa-microphone-slash"></i><span>Unmute</span>' : 
+    muteBtn.innerHTML = isMuted ?
+      '<i class="fas fa-microphone-slash"></i><span>Unmute</span>' :
       '<i class="fas fa-microphone"></i><span>Mute</span>';
   }
-  
+
   if (deafenBtn) {
     deafenBtn.classList.toggle('deafened', isDeafened);
-    deafenBtn.innerHTML = isDeafened ? 
-      '<i class="fas fa-deaf"></i><span>Undeafen</span>' : 
+    deafenBtn.innerHTML = isDeafened ?
+      '<i class="fas fa-deaf"></i><span>Undeafen</span>' :
       '<i class="fas fa-headphones"></i><span>Deafen</span>';
   }
 }
@@ -1826,25 +1833,25 @@ function updateVideoButtons() {
   const muteBtn = document.getElementById('video-mute-btn');
   const videoBtn = document.getElementById('video-camera-btn');
   const screenBtn = document.getElementById('screen-share-btn');
-  
+
   if (muteBtn) {
     muteBtn.classList.toggle('muted', isMuted);
-    muteBtn.innerHTML = isMuted ? 
-      '<i class="fas fa-microphone-slash"></i><span>Unmute</span>' : 
+    muteBtn.innerHTML = isMuted ?
+      '<i class="fas fa-microphone-slash"></i><span>Unmute</span>' :
       '<i class="fas fa-microphone"></i><span>Mute</span>';
   }
-  
+
   if (videoBtn) {
     videoBtn.classList.toggle('video-off', !isVideoOn);
-    videoBtn.innerHTML = !isVideoOn ? 
-      '<i class="fas fa-video-slash"></i><span>Video</span>' : 
+    videoBtn.innerHTML = !isVideoOn ?
+      '<i class="fas fa-video-slash"></i><span>Video</span>' :
       '<i class="fas fa-video"></i><span>Video</span>';
   }
-  
+
   if (screenBtn) {
     screenBtn.classList.toggle('active', isScreenSharing);
-    screenBtn.innerHTML = isScreenSharing ? 
-      '<i class="fas fa-stop"></i><span>Stop</span>' : 
+    screenBtn.innerHTML = isScreenSharing ?
+      '<i class="fas fa-stop"></i><span>Stop</span>' :
       '<i class="fas fa-desktop"></i><span>Screen</span>';
   }
 }
@@ -1852,26 +1859,26 @@ function updateVideoButtons() {
 // WebRTC functions
 async function initiatePeerConnection(userId) {
   if (!localStream) return;
-  
+
   const pc = new RTCPeerConnection({
     iceServers: [
       { urls: 'stun:stun.l.google.com:19302' },
       { urls: 'stun:stun1.l.google.com:19302' }
     ]
   });
-  
+
   peerConnections.set(userId, pc);
-  
+
   localStream.getTracks().forEach(track => {
     pc.addTrack(track, localStream);
   });
-  
+
   pc.ontrack = (event) => {
     const audio = new Audio();
     audio.srcObject = event.streams[0];
     audio.autoplay = true;
   };
-  
+
   pc.onicecandidate = (event) => {
     if (event.candidate) {
       socket.emit('ice-candidate', {
@@ -1880,11 +1887,11 @@ async function initiatePeerConnection(userId) {
       });
     }
   };
-  
+
   try {
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
-    
+
     socket.emit('offer', {
       targetUserId: userId,
       offer: offer
@@ -1896,26 +1903,26 @@ async function initiatePeerConnection(userId) {
 
 async function handleOffer(userId, offer) {
   if (!localStream) return;
-  
+
   const pc = new RTCPeerConnection({
     iceServers: [
       { urls: 'stun:stun.l.google.com:19302' },
       { urls: 'stun:stun1.l.google.com:19302' }
     ]
   });
-  
+
   peerConnections.set(userId, pc);
-  
+
   localStream.getTracks().forEach(track => {
     pc.addTrack(track, localStream);
   });
-  
+
   pc.ontrack = (event) => {
     const audio = new Audio();
     audio.srcObject = event.streams[0];
     audio.autoplay = true;
   };
-  
+
   pc.onicecandidate = (event) => {
     if (event.candidate) {
       socket.emit('ice-candidate', {
@@ -1924,12 +1931,12 @@ async function handleOffer(userId, offer) {
       });
     }
   };
-  
+
   try {
     await pc.setRemoteDescription(offer);
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
-    
+
     socket.emit('answer', {
       targetUserId: userId,
       answer: answer
@@ -1973,20 +1980,20 @@ function closePeerConnection(userId) {
 
 function showIncomingCallNotification(callId, callType, caller) {
   currentCallId = callId;
-  
+
   const modal = document.getElementById('incoming-call-modal');
   document.getElementById('incoming-call-name').textContent = caller.username;
   document.getElementById('incoming-call-type').textContent = callType === 'video' ? 'Video Call' : 'Voice Call';
-  
+
   const avatarDiv = document.getElementById('incoming-call-avatar');
   if (caller.avatar) {
     avatarDiv.innerHTML = `<img src="${caller.avatar}" style="width: 100%; height: 100%; border-radius: 50%; object-fit: cover;">`;
   } else {
     avatarDiv.textContent = caller.username.charAt(0).toUpperCase();
   }
-  
+
   openModal('incoming-call-modal');
-  
+
   const ringtonAudio = document.getElementById('ringtone-audio');
   if (ringtonAudio) {
     ringtonAudio.play().catch(e => console.log('Autoplay prevented'));
@@ -1995,16 +2002,16 @@ function showIncomingCallNotification(callId, callType, caller) {
 
 async function acceptIncomingCall() {
   if (!currentCallId || !currentDirectCall) return;
-  
+
   try {
     console.log('Accepting incoming call:', currentCallId);
-    
+
     // Close the incoming call modal immediately
     closeAllModals();
-    
+
     // Determine if this is a video call
     const isVideoCall = currentDirectCall.callType === 'video';
-    
+
     // Try with enhanced audio constraints first, fall back to basic if needed
     let constraints = {
       audio: {
@@ -2014,25 +2021,25 @@ async function acceptIncomingCall() {
       },
       video: isVideoCall ? { width: 1280, height: 720 } : false
     };
-    
+
     console.log('Getting user media for call acceptance');
-    
+
     try {
       localStream = await navigator.mediaDevices.getUserMedia(constraints);
     } catch (error) {
       console.warn('Enhanced constraints failed, trying basic audio:', error.message);
-      
+
       // Fallback: try with basic constraints
       constraints = {
         audio: true,
         video: isVideoCall ? true : false
       };
-      
+
       localStream = await navigator.mediaDevices.getUserMedia(constraints);
     }
-    
+
     console.log('Got local stream:', localStream.getTracks().map(t => `${t.kind}(${t.enabled})`));
-    
+
     // Verify audio track is present and enabled
     const audioTracks = localStream.getAudioTracks();
     if (audioTracks.length === 0) {
@@ -2043,17 +2050,17 @@ async function acceptIncomingCall() {
         track.enabled = true;
       }
     });
-    
+
     // Store video stream if it's a video call
     if (isVideoCall) {
       localVideoStream = localStream;
       directCallVideoOn = true;
     }
-    
+
     // Create peer connection with caller's ID
     console.log('Creating peer connection for answer');
     directCallPC = createDirectCallPeerConnection(currentDirectCall.id);
-    
+
     // Display local video if video call
     if (isVideoCall) {
       const localVideo = document.getElementById('local-video-direct');
@@ -2061,41 +2068,41 @@ async function acceptIncomingCall() {
         localVideo.srcObject = localStream;
       }
     }
-    
+
     // If we have a pending offer, process it now
     if (window.pendingCallOffer && window.pendingCallOffer.callId === currentCallId) {
       console.log('Processing pending offer');
       const { offer, userId } = window.pendingCallOffer;
-      
+
       await directCallPC.setRemoteDescription(new RTCSessionDescription(offer));
       console.log('Remote description set, creating answer');
-      
+
       const answer = await directCallPC.createAnswer({
         offerToReceiveAudio: true,
         offerToReceiveVideo: isVideoCall
       });
-      
+
       console.log('Setting local description (answer)');
       await directCallPC.setLocalDescription(answer);
-      
+
       console.log('Sending call-answer');
       socket.emit('call-answer', {
         callId: currentCallId,
         targetUserId: userId,
         answer: answer
       });
-      
+
       window.pendingCallOffer = null;
     } else {
       console.warn('No pending offer found for call:', currentCallId);
     }
-    
+
     // Emit acceptance
     socket.emit('call-accept', { callId: currentCallId });
-    
+
     showCallInterface(currentDirectCall, isVideoCall ? 'video' : 'voice');
     startCallTimer();
-    
+
     showNotification('Call connected', 'success');
   } catch (error) {
     console.error('Error accepting call:', error);
@@ -2133,38 +2140,38 @@ async function initiateDirectCall(friendId, friendName, friendAvatar, callType =
     showNotification('You already have an active call', 'warning');
     return;
   }
-  
+
   try {
     console.log('Initiating', callType, 'call to', friendName);
-    
+
     // Try with enhanced audio constraints first, fall back to basic if needed
-    let constraints = { 
+    let constraints = {
       audio: {
         echoCancellation: true,
         noiseSuppression: true,
         autoGainControl: true
       },
-      video: callType === 'video' ? { width: 1280, height: 720 } : false 
+      video: callType === 'video' ? { width: 1280, height: 720 } : false
     };
-    
+
     console.log('Requesting media with constraints:', constraints);
-    
+
     try {
       localStream = await navigator.mediaDevices.getUserMedia(constraints);
     } catch (error) {
       console.warn('Enhanced constraints failed, trying basic audio:', error.message);
-      
+
       // Fallback: try with basic constraints
-      constraints = { 
+      constraints = {
         audio: true,
         video: callType === 'video' ? true : false
       };
-      
+
       localStream = await navigator.mediaDevices.getUserMedia(constraints);
     }
-    
+
     console.log('Got local stream with tracks:', localStream.getTracks().map(t => `${t.kind}(${t.enabled})`));
-    
+
     // Verify audio track is present and enabled
     const audioTracks = localStream.getAudioTracks();
     if (audioTracks.length === 0) {
@@ -2176,26 +2183,26 @@ async function initiateDirectCall(friendId, friendName, friendAvatar, callType =
         track.enabled = true;
       }
     });
-    
+
     // For video calls, also capture the video stream separately for fallback
     if (callType === 'video') {
       localVideoStream = localStream;
       directCallVideoOn = true;
     }
-    
+
     // Generate call ID
     currentCallId = 'call_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-    
+
     currentDirectCall = {
       id: friendId,
       username: friendName,
       avatar: friendAvatar
     };
-    
+
     // Create peer connection BEFORE creating offer
     console.log('Creating peer connection');
     directCallPC = createDirectCallPeerConnection(friendId);
-    
+
     // Display local video if video call
     if (callType === 'video') {
       const localVideo = document.getElementById('local-video-direct');
@@ -2203,33 +2210,30 @@ async function initiateDirectCall(friendId, friendName, friendAvatar, callType =
         localVideo.srcObject = localStream;
       }
     }
-    
+
     console.log('Creating offer');
     // Create and send offer
     const offer = await directCallPC.createOffer({
       offerToReceiveAudio: true,
       offerToReceiveVideo: callType === 'video'
     });
-    
+
     console.log('Setting local description');
     await directCallPC.setLocalDescription(offer);
-    
-    console.log('Sending call-initiate and call-offer');
+
+    console.log('Sending call-initiate with offer');
     socket.emit('call-initiate', {
       targetUserId: friendId,
       callType: callType,
-      callId: currentCallId
-    });
-    
-    socket.emit('call-offer', {
       callId: currentCallId,
-      targetUserId: friendId,
       offer: offer
     });
-    
+
+    // socket.emit('call-offer', ...) is no longer needed as offer is sent in initiate
+
     showCallInterface(currentDirectCall, callType);
     showNotification(`Calling ${friendName}...`, 'info');
-    
+
   } catch (error) {
     console.error('Error initiating call:', error);
     showNotification('Could not access media: ' + error.message, 'error');
@@ -2247,12 +2251,12 @@ function createDirectCallPeerConnection(remoteUserId) {
     { urls: 'stun:stun2.l.google.com:19302' },
     { urls: 'stun:stun3.l.google.com:19302' },
     { urls: 'stun:stun4.l.google.com:19302' },
-    
+
     // Other reliable STUN servers
     { urls: 'stun:numb.viagenie.ca:3478' },
     { urls: 'stun:stun.stunprotocol.org:3478' },
     { urls: 'stun:stunserver.stunprotocol.org:3478' },
-    
+
     // Free TURN servers for production/Railway
     // Note: These may have rate limits but are good for testing
     {
@@ -2267,14 +2271,14 @@ function createDirectCallPeerConnection(remoteUserId) {
       credential: 'openrelayproject'
     }
   ];
-  
+
   const pc = new RTCPeerConnection({
     iceServers: iceServers,
     iceCandidatePoolSize: 10
   });
-  
+
   console.log('Creating peer connection with', iceServers.length, 'ICE servers');
-  
+
   // Add local stream tracks
   if (localStream) {
     console.log('Adding local tracks to peer connection:', localStream.getTracks().map(t => `${t.kind}(${t.enabled})`));
@@ -2285,7 +2289,7 @@ function createDirectCallPeerConnection(remoteUserId) {
   } else {
     console.warn('No local stream available when creating peer connection');
   }
-  
+
   // Create audio element for remote audio ONCE
   let remoteAudio = document.getElementById('remote-audio-direct');
   if (!remoteAudio) {
@@ -2299,34 +2303,34 @@ function createDirectCallPeerConnection(remoteUserId) {
     remoteAudio.style.display = 'none';
     document.body.appendChild(remoteAudio);
   }
-  
+
   // Handle remote stream - Use onaddstream as well for wider compatibility
   pc.onaddstream = (event) => {
     console.log('onaddstream called with stream:', event.stream);
     remoteAudio.srcObject = event.stream;
     remoteAudio.play().catch(e => console.error('Play error in onaddstream:', e));
   };
-  
+
   // Handle remote track (modern approach)
   pc.ontrack = (event) => {
     console.log('ontrack - Remote track received:', event.track.kind, 'enabled:', event.track.enabled, 'readyState:', event.track.readyState);
-    
+
     if (!event.streams || event.streams.length === 0) {
       console.warn('No streams in ontrack event');
       return;
     }
-    
+
     const remoteStream = event.streams[0];
     console.log('Remote stream has tracks:', remoteStream.getTracks().map(t => `${t.kind}(${t.enabled})`));
-    
+
     if (event.track.kind === 'audio') {
       console.log('Handling audio track - setting to remote audio element');
       remoteAudio.srcObject = remoteStream;
-      
+
       // Ensure audio can play
       remoteAudio.volume = 1.0;
       remoteAudio.muted = false;
-      
+
       // Try to play
       const playPromise = remoteAudio.play();
       if (playPromise !== undefined) {
@@ -2350,7 +2354,7 @@ function createDirectCallPeerConnection(remoteUserId) {
       }
     }
   };
-  
+
   // Handle ICE candidates
   pc.onicecandidate = (event) => {
     if (event.candidate) {
@@ -2362,7 +2366,7 @@ function createDirectCallPeerConnection(remoteUserId) {
       });
     }
   };
-  
+
   // Handle connection state changes
   pc.onconnectionstatechange = () => {
     console.log('Connection state:', pc.connectionState);
@@ -2370,12 +2374,12 @@ function createDirectCallPeerConnection(remoteUserId) {
       endDirectCall();
     }
   };
-  
+
   // Log ICE connection state
   pc.oniceconnectionstatechange = () => {
     console.log('ICE connection state:', pc.iceConnectionState);
   };
-  
+
   return pc;
 }
 
@@ -2383,17 +2387,17 @@ function showCallInterface(user, callType = 'voice') {
   // Hide both interfaces first
   const voiceInterface = document.getElementById('voice-call-interface');
   const videoInterface = document.getElementById('video-call-interface');
-  
+
   if (voiceInterface) voiceInterface.classList.add('hidden');
   if (videoInterface) videoInterface.classList.add('hidden');
-  
+
   if (callType === 'voice') {
     // Show voice call interface
     if (voiceInterface) voiceInterface.classList.remove('hidden');
-    
+
     const avatarEl = document.getElementById('voice-call-avatar');
     const avatarLargeEl = document.getElementById('voice-avatar-large');
-    
+
     if (user.avatar) {
       avatarEl.innerHTML = `<img src="${user.avatar}" style="width: 100%; height: 100%; border-radius: 50%; object-fit: cover;">`;
       avatarLargeEl.innerHTML = `<img src="${user.avatar}" style="width: 100%; height: 100%; border-radius: 50%; object-fit: cover;">`;
@@ -2401,23 +2405,23 @@ function showCallInterface(user, callType = 'voice') {
       avatarEl.innerHTML = user.username.charAt(0).toUpperCase();
       avatarLargeEl.innerHTML = user.username.charAt(0).toUpperCase();
     }
-    
+
     document.getElementById('voice-call-name').textContent = user.username;
     document.getElementById('voice-call-name-large').textContent = user.username;
-    
+
   } else if (callType === 'video') {
     // Show video call interface
     if (videoInterface) videoInterface.classList.remove('hidden');
-    
+
     const avatarEl = document.getElementById('video-call-avatar');
     if (user.avatar) {
       avatarEl.innerHTML = `<img src="${user.avatar}" style="width: 100%; height: 100%; border-radius: 50%; object-fit: cover;">`;
     } else {
       avatarEl.innerHTML = user.username.charAt(0).toUpperCase();
     }
-    
+
     document.getElementById('video-call-name').textContent = user.username;
-    
+
     const localVideo = document.getElementById('local-video-direct');
     if (localVideo && localStream) {
       localVideo.srcObject = localStream;
@@ -2430,86 +2434,86 @@ function endDirectCall() {
     clearInterval(callTimer);
     callTimer = null;
   }
-  
+
   if (currentCallId) {
     socket.emit('call-end', { callId: currentCallId });
   }
-  
+
   if (directCallPC) {
     directCallPC.close();
     directCallPC = null;
   }
-  
+
   if (localStream) {
     localStream.getTracks().forEach(track => track.stop());
     localStream = null;
   }
-  
+
   if (localVideoStream) {
     localVideoStream.getTracks().forEach(track => track.stop());
     localVideoStream = null;
   }
-  
+
   if (screenStream) {
     screenStream.getTracks().forEach(track => track.stop());
     screenStream = null;
     isScreenSharing = false;
   }
-  
+
   try {
     const ringtonAudio = document.getElementById('ringtone-audio');
     if (ringtonAudio) {
       ringtonAudio.pause();
       ringtonAudio.currentTime = 0;
     }
-    
+
     const remoteAudio = document.getElementById('remote-audio-direct');
     if (remoteAudio) {
       remoteAudio.srcObject = null;
       remoteAudio.pause();
     }
-    
+
     const localVideo = document.getElementById('local-video-direct');
     if (localVideo) {
       localVideo.srcObject = null;
     }
-    
+
     const remoteVideo = document.getElementById('remote-video-direct');
     if (remoteVideo) {
       remoteVideo.srcObject = null;
     }
-  } catch (e) {}
-  
+  } catch (e) { }
+
   // Hide both call interfaces
   const voiceInterface = document.getElementById('voice-call-interface');
   const videoInterface = document.getElementById('video-call-interface');
   if (voiceInterface) voiceInterface.classList.add('hidden');
   if (videoInterface) videoInterface.classList.add('hidden');
-  
+
   currentCallId = null;
   currentDirectCall = null;
   directCallMuted = false;
   directCallVideoOn = false;
-  
+
   closeAllModals();
 }
 
 function startCallTimer() {
   callStartTime = Date.now();
-  
+
   if (callTimer) clearInterval(callTimer);
-  
+
   callTimer = setInterval(() => {
     if (callStartTime) {
       const elapsed = Math.floor((Date.now() - callStartTime) / 1000);
       const minutes = Math.floor(elapsed / 60);
       const seconds = elapsed % 60;
       const timeStr = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-      
+
       // Update both voice and video call durations
       const voiceDuration = document.getElementById('voice-call-duration');
       const videoDuration = document.getElementById('video-call-duration');
-      
+
       if (voiceDuration) voiceDuration.textContent = timeStr;
       if (videoDuration) videoDuration.textContent = timeStr;
     }
@@ -2522,11 +2526,11 @@ function toggleDirectCallMute() {
     localStream.getAudioTracks().forEach(track => {
       track.enabled = !directCallMuted;
     });
-    
+
     // Update both buttons
     const voiceBtn = document.getElementById('voice-mute-btn');
     const videoBtn = document.getElementById('video-mute-btn');
-    
+
     const buttons = [voiceBtn, videoBtn].filter(btn => btn);
     buttons.forEach(btn => {
       if (directCallMuted) {
@@ -2545,24 +2549,24 @@ function toggleDirectCallVideo() {
     showNotification('No active call', 'error');
     return;
   }
-  
+
   if (!directCallVideoOn) {
     // Enable video
     navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720 } }).then(videoStream => {
       const videoTrack = videoStream.getVideoTracks()[0];
-      
+
       if (!videoTrack) {
         showNotification('Could not get video track', 'error');
         return;
       }
-      
+
       // Store the video stream
       localVideoStream = videoStream;
       directCallVideoOn = true;
-      
+
       // Find existing video sender or add new track
       const videoSender = directCallPC.getSenders().find(s => s.track?.kind === 'video');
-      
+
       if (videoSender) {
         // Replace existing video track
         videoSender.replaceTrack(videoTrack).catch(e => {
@@ -2578,19 +2582,19 @@ function toggleDirectCallVideo() {
           directCallVideoOn = false;
         });
       }
-      
+
       // Show video locally
       const localVideo = document.getElementById('local-video-direct');
       if (localVideo) {
         localVideo.srcObject = videoStream;
       }
-      
+
       // Update button
       const btn = document.getElementById('video-camera-btn');
       if (btn) {
         btn.style.background = 'var(--success)';
       }
-      
+
       showNotification('Camera enabled', 'success');
     }).catch(error => {
       console.error('Could not access camera:', error);
@@ -2600,7 +2604,7 @@ function toggleDirectCallVideo() {
   } else {
     // Disable video
     directCallVideoOn = false;
-    
+
     if (directCallPC) {
       const videoSender = directCallPC.getSenders().find(s => s.track?.kind === 'video');
       if (videoSender && videoSender.track) {
@@ -2608,25 +2612,25 @@ function toggleDirectCallVideo() {
         videoSender.replaceTrack(null).catch(e => console.error('Error removing video:', e));
       }
     }
-    
+
     // Stop local video stream
     if (localVideoStream) {
       localVideoStream.getTracks().forEach(track => track.stop());
       localVideoStream = null;
     }
-    
+
     // Clear local video
     const localVideo = document.getElementById('local-video-direct');
     if (localVideo) {
       localVideo.srcObject = null;
     }
-    
+
     // Update button
     const btn = document.getElementById('video-camera-btn');
     if (btn) {
       btn.style.background = '';
     }
-    
+
     showNotification('Camera disabled', 'info');
   }
 }
@@ -2636,18 +2640,18 @@ async function toggleScreenSharing() {
     showNotification('No active call', 'error');
     return;
   }
-  
+
   try {
     if (isScreenSharing) {
       // Stop screen sharing
       isScreenSharing = false;
-      
+
       // Stop screen stream tracks
       if (screenStream) {
         screenStream.getTracks().forEach(track => track.stop());
         screenStream = null;
       }
-      
+
       // Replace screen track with camera track if video was on, otherwise mute
       if (directCallVideoOn && localVideoStream) {
         const videoTrack = localVideoStream.getVideoTracks()[0];
@@ -2661,20 +2665,20 @@ async function toggleScreenSharing() {
           await sender.replaceTrack(null);
         }
       }
-      
+
       showNotification('Screen sharing stopped', 'info');
     } else {
       // Start screen sharing
       screenStream = await navigator.mediaDevices.getDisplayMedia({
-        video: { 
+        video: {
           cursor: 'always',
-          displaySurface: 'monitor' 
+          displaySurface: 'monitor'
         },
         audio: false
       });
-      
+
       const screenTrack = screenStream.getVideoTracks()[0];
-      
+
       // Replace video with screen
       const sender = directCallPC.getSenders().find(s => s.track?.kind === 'video');
       if (sender) {
@@ -2682,16 +2686,16 @@ async function toggleScreenSharing() {
       } else {
         directCallPC.addTrack(screenTrack, screenStream);
       }
-      
+
       // Handle screen share stop
       screenTrack.onended = () => {
         toggleScreenSharing();
       };
-      
+
       isScreenSharing = true;
       showNotification('Screen sharing started', 'success');
     }
-    
+
     // Update button state
     const screenBtn = document.getElementById('screen-share-btn');
     if (screenBtn) {
@@ -2718,12 +2722,12 @@ async function showAddServerMembers() {
     const response = await fetch('/api/friends', { credentials: 'same-origin' });
     if (response.ok) {
       const friendsList = await response.json();
-      
+
       const container = document.getElementById('server-friend-selector-list');
       if (!container) return;
-      
+
       container.innerHTML = '';
-      
+
       friendsList.forEach(friend => {
         const label = document.createElement('label');
         label.style.display = 'flex';
@@ -2733,25 +2737,25 @@ async function showAddServerMembers() {
         label.style.borderRadius = '4px';
         label.style.cursor = 'pointer';
         label.style.transition = 'background 0.2s';
-        
+
         const checkbox = document.createElement('input');
         checkbox.type = 'checkbox';
         checkbox.value = friend.id;
         checkbox.className = 'server-member-checkbox';
-        
+
         const info = document.createElement('div');
         info.style.flex = '1';
         info.textContent = friend.username;
-        
+
         label.appendChild(checkbox);
         label.appendChild(info);
-        
+
         label.onmouseover = () => label.style.background = 'var(--channel-hover)';
         label.onmouseout = () => label.style.background = 'transparent';
-        
+
         container.appendChild(label);
       });
-      
+
       openModal('add-server-members-modal');
     }
   } catch (error) {
@@ -2764,15 +2768,15 @@ async function addMembersToServer() {
     showNotification('Please select a server first', 'warning');
     return;
   }
-  
+
   const checkboxes = document.querySelectorAll('.server-member-checkbox:checked');
   const selectedFriends = Array.from(checkboxes).map(cb => cb.value);
-  
+
   if (selectedFriends.length === 0) {
     showNotification('Select at least one friend', 'warning');
     return;
   }
-  
+
   try {
     const response = await fetch(`/api/servers/${currentServer}/members`, {
       method: 'POST',
@@ -2780,11 +2784,11 @@ async function addMembersToServer() {
       credentials: 'same-origin',
       body: JSON.stringify({ userIds: selectedFriends })
     });
-    
+
     if (response.ok) {
       showNotification(`Added ${selectedFriends.length} member(s) to server`, 'success');
       closeModal('add-server-members-modal');
-      
+
       // Reload server members
       const membersResponse = await fetch(`/api/servers/${currentServer}/members`, { credentials: 'same-origin' });
       if (membersResponse.ok) {
@@ -2823,19 +2827,19 @@ function closeAllModals() {
 function showNotification(message, type = 'info') {
   const container = document.getElementById('notifications');
   if (!container) return;
-  
+
   const notification = document.createElement('div');
   notification.className = `notification ${type}`;
-  
+
   const icon = type === 'success' ? 'check-circle' : type === 'error' ? 'exclamation-circle' : 'info-circle';
-  
+
   notification.innerHTML = `
     <i class="fas fa-${icon}"></i>
     <span>${message}</span>
   `;
-  
+
   container.appendChild(notification);
-  
+
   setTimeout(() => {
     notification.style.opacity = '0';
     notification.style.transform = 'translateX(100%)';
@@ -2859,8 +2863,8 @@ function handleMessageKeypress(event) {
 function handleEnterKey(event, action) {
   if (event.key === 'Enter') {
     event.preventDefault();
-    
-    switch(action) {
+
+    switch (action) {
       case 'login':
         handleLogin();
         break;

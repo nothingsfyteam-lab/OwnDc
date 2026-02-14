@@ -612,13 +612,14 @@ module.exports = (io) => {
     
     // 1-on-1 call initiation
     socket.on('call-initiate', (data) => {
-      const { targetUserId, callType, callId } = data;
+      const { targetUserId, callType, callId, offer } = data;
       const targetSocketId = userSockets.get(targetUserId);
       
       if (targetSocketId) {
         io.to(targetSocketId).emit('incoming-call', {
           callId,
           callType,
+          offer, // Pass offer directly to callee
           caller: {
             id: currentUser?.id,
             username: currentUser?.username,
@@ -668,9 +669,6 @@ module.exports = (io) => {
           });
         }
         
-        // Join call room
-        socket.join(`call:${callId}`);
-        
         console.log(`Call accepted: ${callId} by ${currentUser?.username}`);
       }
     });
@@ -716,32 +714,44 @@ module.exports = (io) => {
       }
     });
     
-    // WebRTC signaling for calls
+    // WebRTC signaling for calls - Direct Messaging
+    
+    // Note: call-offer is no longer needed separately as it's sent in 'call-initiate', 
+    // but we keep it for renegotiation if needed.
     socket.on('call-offer', (data) => {
-      const { callId, offer } = data;
-      socket.to(`call:${callId}`).emit('call-offer', {
-        callId,
-        userId: currentUser?.id,
-        offer
-      });
+      const { callId, targetUserId, offer } = data;
+      const targetSocketId = userSockets.get(targetUserId);
+      if (targetSocketId) {
+        io.to(targetSocketId).emit('call-offer', {
+          callId,
+          userId: currentUser?.id,
+          offer
+        });
+      }
     });
     
     socket.on('call-answer', (data) => {
-      const { callId, answer } = data;
-      socket.to(`call:${callId}`).emit('call-answer', {
-        callId,
-        userId: currentUser?.id,
-        answer
-      });
+      const { callId, targetUserId, answer } = data;
+      const targetSocketId = userSockets.get(targetUserId);
+      if (targetSocketId) {
+        io.to(targetSocketId).emit('call-answer', {
+          callId,
+          userId: currentUser?.id,
+          answer
+        });
+      }
     });
     
     socket.on('call-ice-candidate', (data) => {
-      const { callId, candidate } = data;
-      socket.to(`call:${callId}`).emit('call-ice-candidate', {
-        callId,
-        userId: currentUser?.id,
-        candidate
-      });
+      const { callId, targetUserId, candidate } = data;
+      const targetSocketId = userSockets.get(targetUserId);
+      if (targetSocketId) {
+        io.to(targetSocketId).emit('call-ice-candidate', {
+          callId,
+          userId: currentUser?.id,
+          candidate
+        });
+      }
     });
 
     // ==================== DISCONNECT ====================
