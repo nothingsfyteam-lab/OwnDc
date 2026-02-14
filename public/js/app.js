@@ -42,6 +42,7 @@ let directCallMuted = false;
 let directCallVideoOn = false;
 let callTimer = null;
 let callStartTime = null;
+let iceCandidateQueue = [];
 
 // UI state
 let typingTimeout = null;
@@ -445,14 +446,26 @@ function initializeSocket() {
     showIncomingCallNotification(callId, callType, caller);
   });
 
-  socket.on('call-accepted', (data) => {
-    const { callId, callee } = data;
-    currentDirectCall = callee;
-    currentCallId = callId;
-    closeAllModals();
-    showCallInterface(callee);
-    startCallTimer();
+  socket.on('call-accepted', async (data) => {
+    const { callId, callee, answer } = data;
     console.log('Call accepted by:', callee.username);
+
+    if (currentCallId === callId && directCallPC) {
+      currentDirectCall = callee;
+      closeAllModals();
+      showCallInterface(callee, currentDirectCall.callType);
+      startCallTimer();
+
+      if (answer) {
+        console.log('Setting remote description (answer)');
+        try {
+          await directCallPC.setRemoteDescription(new RTCSessionDescription(answer));
+          await flushIceCandidates();
+        } catch (e) {
+          console.error('Error setting remote description for answer:', e);
+        }
+      }
+    }
   });
 
   socket.on('call-rejected', (data) => {
@@ -471,58 +484,40 @@ function initializeSocket() {
 
   socket.on('call-offer', async (data) => {
     const { callId, userId, offer } = data;
-    try {
-      console.log('Received call-offer from:', userId);
-      // Store the offer for when user accepts
-      window.pendingCallOffer = { callId, userId, offer };
+    console.log('Received call-offer from:', userId);
+    window.pendingCallOffer = { callId, userId, offer };
 
-      // If localStream is already available, process immediately
-      if (localStream && !directCallPC) {
-        console.log('Local stream already available, creating peer connection');
-        directCallPC = createDirectCallPeerConnection(userId);
-        await directCallPC.setRemoteDescription(new RTCSessionDescription(offer));
-        const answer = await directCallPC.createAnswer({
-          offerToReceiveAudio: true,
-          offerToReceiveVideo: true
-        });
-        await directCallPC.setLocalDescription(answer);
-        socket.emit('call-answer', {
-          callId,
-          targetUserId: userId,
-          answer: answer
-        });
-      } else {
-        console.log('Waiting for user to accept before creating peer connection');
-      }
-    } catch (error) {
-      console.error('Error handling call offer:', error);
-    }
+    // If we're already connecting (e.g. we initiated), we might need to handle this
+    // but usually initiate/accept handles the flow.
   });
 
   socket.on('call-answer', async (data) => {
     const { callId, userId, answer } = data;
     console.log('Received call-answer from:', userId);
-    if (directCallPC) {
+    if (directCallPC && currentCallId === callId) {
       try {
         console.log('Setting remote description for answer');
         await directCallPC.setRemoteDescription(new RTCSessionDescription(answer));
-        console.log('Remote description set successfully');
+        await flushIceCandidates();
       } catch (error) {
         console.error('Error handling call answer:', error);
       }
-    } else {
-      console.warn('No peer connection when receiving answer');
     }
   });
 
   socket.on('call-ice-candidate', async (data) => {
     const { callId, userId, candidate } = data;
-    if (directCallPC) {
+    if (currentCallId !== callId) return;
+
+    if (directCallPC && directCallPC.remoteDescription) {
       try {
         await directCallPC.addIceCandidate(new RTCIceCandidate(candidate));
       } catch (error) {
         console.error('Error adding ICE candidate:', error);
       }
+    } else {
+      console.log('Queuing ICE candidate (remote description not set)');
+      iceCandidateQueue.push(candidate);
     }
   });
 
@@ -2001,113 +1996,71 @@ function showIncomingCallNotification(callId, callType, caller) {
 }
 
 async function acceptIncomingCall() {
-  if (!currentCallId || !currentDirectCall) return;
+  if (!currentCallId || !currentDirectCall || !window.pendingCallOffer) {
+    console.warn('Attempted to accept call without valid state or pending offer');
+    return;
+  }
 
   try {
     console.log('Accepting incoming call:', currentCallId);
 
-    // Close the incoming call modal immediately
+    // Close modal
     closeAllModals();
 
-    // Determine if this is a video call
     const isVideoCall = currentDirectCall.callType === 'video';
 
-    // Try with enhanced audio constraints first, fall back to basic if needed
-    let constraints = {
-      audio: {
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true
-      },
+    // Get local media
+    const constraints = {
+      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
       video: isVideoCall ? { width: 1280, height: 720 } : false
     };
 
-    console.log('Getting user media for call acceptance');
-
     try {
       localStream = await navigator.mediaDevices.getUserMedia(constraints);
-    } catch (error) {
-      console.warn('Enhanced constraints failed, trying basic audio:', error.message);
-
-      // Fallback: try with basic constraints
-      constraints = {
-        audio: true,
-        video: isVideoCall ? true : false
-      };
-
-      localStream = await navigator.mediaDevices.getUserMedia(constraints);
+    } catch (e) {
+      console.warn('Enhanced constraints failed, falling back to basic', e);
+      localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: isVideoCall });
     }
 
-    console.log('Got local stream:', localStream.getTracks().map(t => `${t.kind}(${t.enabled})`));
-
-    // Verify audio track is present and enabled
-    const audioTracks = localStream.getAudioTracks();
-    if (audioTracks.length === 0) {
-      throw new Error('No audio track in local stream');
-    }
-    audioTracks.forEach(track => {
-      if (!track.enabled) {
-        track.enabled = true;
-      }
-    });
-
-    // Store video stream if it's a video call
     if (isVideoCall) {
       localVideoStream = localStream;
       directCallVideoOn = true;
+      const localVideo = document.getElementById('local-video-direct');
+      if (localVideo) localVideo.srcObject = localStream;
     }
 
-    // Create peer connection with caller's ID
-    console.log('Creating peer connection for answer');
+    // Create PC and process offer
     directCallPC = createDirectCallPeerConnection(currentDirectCall.id);
 
-    // Display local video if video call
-    if (isVideoCall) {
-      const localVideo = document.getElementById('local-video-direct');
-      if (localVideo) {
-        localVideo.srcObject = localStream;
-      }
-    }
+    // Set Remote Description (Offer)
+    const { offer } = window.pendingCallOffer;
+    console.log('Setting remote description from pending offer');
+    await directCallPC.setRemoteDescription(new RTCSessionDescription(offer));
 
-    // If we have a pending offer, process it now
-    if (window.pendingCallOffer && window.pendingCallOffer.callId === currentCallId) {
-      console.log('Processing pending offer');
-      const { offer, userId } = window.pendingCallOffer;
+    // Create Answer
+    const answer = await directCallPC.createAnswer();
+    await directCallPC.setLocalDescription(answer);
 
-      await directCallPC.setRemoteDescription(new RTCSessionDescription(offer));
-      console.log('Remote description set, creating answer');
+    // Signaling
+    socket.emit('call-accept', {
+      callId: currentCallId,
+      targetUserId: currentDirectCall.id,
+      answer: answer
+    });
 
-      const answer = await directCallPC.createAnswer({
-        offerToReceiveAudio: true,
-        offerToReceiveVideo: isVideoCall
-      });
+    // Flush ICE candidates
+    await flushIceCandidates();
 
-      console.log('Setting local description (answer)');
-      await directCallPC.setLocalDescription(answer);
-
-      console.log('Sending call-answer');
-      socket.emit('call-answer', {
-        callId: currentCallId,
-        targetUserId: userId,
-        answer: answer
-      });
-
-      window.pendingCallOffer = null;
-    } else {
-      console.warn('No pending offer found for call:', currentCallId);
-    }
-
-    // Emit acceptance
-    socket.emit('call-accept', { callId: currentCallId });
-
-    showCallInterface(currentDirectCall, isVideoCall ? 'video' : 'voice');
+    showCallInterface(currentDirectCall, currentDirectCall.callType);
     startCallTimer();
 
+    window.pendingCallOffer = null;
     showNotification('Call connected', 'success');
+
   } catch (error) {
-    console.error('Error accepting call:', error);
-    showNotification('Could not access media: ' + error.message, 'error');
-    rejectIncomingCall();
+    console.error('Failed to accept call:', error);
+    showNotification('Could not connect call: ' + error.message, 'error');
+    endDirectCall();
   }
 }
 
@@ -2136,92 +2089,51 @@ async function initiateVideoCall(friendId, friendName, friendAvatar) {
 }
 
 async function initiateDirectCall(friendId, friendName, friendAvatar, callType = 'voice') {
-  if (currentCallId && currentDirectCall) {
-    showNotification('You already have an active call', 'warning');
+  if (currentCallId) {
+    showNotification('You are already in a call or connecting', 'warning');
     return;
   }
 
   try {
-    console.log('Initiating', callType, 'call to', friendName);
+    console.log(`Initiating ${callType} call to ${friendName}`);
 
-    // Try with enhanced audio constraints first, fall back to basic if needed
-    let constraints = {
-      audio: {
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true
-      },
+    // Clear state
+    iceCandidateQueue = [];
+    currentCallId = 'call_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+    currentDirectCall = { id: friendId, username: friendName, avatar: friendAvatar, callType };
+
+    // Get local media
+    const constraints = {
+      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
       video: callType === 'video' ? { width: 1280, height: 720 } : false
     };
 
-    console.log('Requesting media with constraints:', constraints);
-
     try {
       localStream = await navigator.mediaDevices.getUserMedia(constraints);
-    } catch (error) {
-      console.warn('Enhanced constraints failed, trying basic audio:', error.message);
-
-      // Fallback: try with basic constraints
-      constraints = {
-        audio: true,
-        video: callType === 'video' ? true : false
-      };
-
-      localStream = await navigator.mediaDevices.getUserMedia(constraints);
+    } catch (e) {
+      console.warn('Enhanced constraints failed, falling back to basic', e);
+      localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: callType === 'video' });
     }
 
-    console.log('Got local stream with tracks:', localStream.getTracks().map(t => `${t.kind}(${t.enabled})`));
-
-    // Verify audio track is present and enabled
-    const audioTracks = localStream.getAudioTracks();
-    if (audioTracks.length === 0) {
-      throw new Error('No audio track in local stream');
-    }
-    audioTracks.forEach(track => {
-      console.log('Audio track enabled:', track.enabled);
-      if (!track.enabled) {
-        track.enabled = true;
-      }
-    });
-
-    // For video calls, also capture the video stream separately for fallback
     if (callType === 'video') {
       localVideoStream = localStream;
       directCallVideoOn = true;
+      const localVideo = document.getElementById('local-video-direct');
+      if (localVideo) localVideo.srcObject = localStream;
     }
 
-    // Generate call ID
-    currentCallId = 'call_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-
-    currentDirectCall = {
-      id: friendId,
-      username: friendName,
-      avatar: friendAvatar
-    };
-
-    // Create peer connection BEFORE creating offer
-    console.log('Creating peer connection');
+    // Create PC
     directCallPC = createDirectCallPeerConnection(friendId);
 
-    // Display local video if video call
-    if (callType === 'video') {
-      const localVideo = document.getElementById('local-video-direct');
-      if (localVideo) {
-        localVideo.srcObject = localStream;
-      }
-    }
-
-    console.log('Creating offer');
-    // Create and send offer
+    // Create Offer
     const offer = await directCallPC.createOffer({
       offerToReceiveAudio: true,
       offerToReceiveVideo: callType === 'video'
     });
 
-    console.log('Setting local description');
     await directCallPC.setLocalDescription(offer);
 
-    console.log('Sending call-initiate with offer');
+    // Signaling
     socket.emit('call-initiate', {
       targetUserId: friendId,
       callType: callType,
@@ -2229,16 +2141,13 @@ async function initiateDirectCall(friendId, friendName, friendAvatar, callType =
       offer: offer
     });
 
-    // socket.emit('call-offer', ...) is no longer needed as offer is sent in initiate
-
     showCallInterface(currentDirectCall, callType);
     showNotification(`Calling ${friendName}...`, 'info');
 
   } catch (error) {
-    console.error('Error initiating call:', error);
+    console.error('Failed to initiate call:', error);
     showNotification('Could not access media: ' + error.message, 'error');
-    currentCallId = null;
-    currentDirectCall = null;
+    endDirectCall();
   }
 }
 
@@ -2358,7 +2267,7 @@ function createDirectCallPeerConnection(remoteUserId) {
   // Handle ICE candidates
   pc.onicecandidate = (event) => {
     if (event.candidate) {
-      console.log('Sending ICE candidate');
+      console.log('Sending ICE candidate to:', remoteUserId);
       socket.emit('call-ice-candidate', {
         callId: currentCallId,
         targetUserId: remoteUserId || currentDirectCall?.id,
@@ -2369,8 +2278,16 @@ function createDirectCallPeerConnection(remoteUserId) {
 
   // Handle connection state changes
   pc.onconnectionstatechange = () => {
-    console.log('Connection state:', pc.connectionState);
-    if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed' || pc.connectionState === 'closed') {
+    console.log('Connection state change:', pc.connectionState);
+    if (pc.connectionState === 'failed') {
+      console.warn('Connection failed, attempting to wait 5s for recovery...');
+      setTimeout(() => {
+        if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
+          console.error('Connection permanently failed, ending call');
+          endDirectCall();
+        }
+      }, 5000);
+    } else if (pc.connectionState === 'closed') {
       endDirectCall();
     }
   };
@@ -2378,9 +2295,53 @@ function createDirectCallPeerConnection(remoteUserId) {
   // Log ICE connection state
   pc.oniceconnectionstatechange = () => {
     console.log('ICE connection state:', pc.iceConnectionState);
+    if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
+      console.log('P2P Connection established successfully');
+    }
+  };
+
+  // Modern way to handle remote streams
+  pc.ontrack = (event) => {
+    console.log('Remote track received:', event.track.kind);
+    if (event.streams && event.streams[0]) {
+      const remoteStream = event.streams[0];
+      if (event.track.kind === 'audio') {
+        const remoteAudio = document.getElementById('remote-audio-direct');
+        if (remoteAudio) {
+          remoteAudio.srcObject = remoteStream;
+          remoteAudio.play().catch(e => {
+            console.warn('Auto-play failed for audio, waiting for interaction:', e);
+            document.addEventListener('click', () => {
+              remoteAudio.play().catch(console.error);
+            }, { once: true });
+          });
+        }
+      } else if (event.track.kind === 'video') {
+        const remoteVideo = document.getElementById('remote-video-direct');
+        if (remoteVideo) {
+          remoteVideo.srcObject = remoteStream;
+          remoteVideo.play().catch(console.error);
+        }
+      }
+    }
   };
 
   return pc;
+}
+
+// Helper to flush ICE candidate queue
+async function flushIceCandidates() {
+  if (!directCallPC || !directCallPC.remoteDescription) return;
+
+  console.log(`Flushing ${iceCandidateQueue.length} queued ICE candidates`);
+  while (iceCandidateQueue.length > 0) {
+    const candidate = iceCandidateQueue.shift();
+    try {
+      await directCallPC.addIceCandidate(new RTCIceCandidate(candidate));
+    } catch (e) {
+      console.error('Error adding queued ICE candidate:', e);
+    }
+  }
 }
 
 function showCallInterface(user, callType = 'voice') {
@@ -2494,6 +2455,7 @@ function endDirectCall() {
   currentDirectCall = null;
   directCallMuted = false;
   directCallVideoOn = false;
+  iceCandidateQueue = [];
 
   closeAllModals();
 }

@@ -32,7 +32,7 @@ function dbRun(query, params = []) {
   return new Promise((resolve, reject) => {
     const db = getDb();
     if (!db) return resolve({ changes: 0 });
-    db.run(query, params, function(err) {
+    db.run(query, params, function (err) {
       if (err) reject(err);
       else resolve({ id: this.lastID, changes: this.changes });
     });
@@ -53,16 +53,16 @@ module.exports = (io) => {
     socket.on('authenticate', async (userId) => {
       try {
         const user = await dbGet('SELECT id, username, avatar, status, custom_status, activity FROM users WHERE id = ?', [userId]);
-        
+
         if (user) {
           currentUser = user;
           userSockets.set(userId, socket.id);
           userStatus.set(userId, user.status);
-          
+
           await dbRun("UPDATE users SET status = 'online', last_seen = datetime('now') WHERE id = ?", [userId]);
-          
+
           socket.emit('authenticated', { success: true, user });
-          
+
           // Broadcast to friends
           const friends = await dbAll(`
             SELECT DISTINCT u.id FROM users u
@@ -96,9 +96,9 @@ module.exports = (io) => {
 
     socket.on('update-status', async (data) => {
       if (!currentUser) return;
-      
+
       const { status, customStatus, activity, activityType } = data;
-      
+
       try {
         await dbRun(
           'UPDATE users SET status = ?, custom_status = ?, activity = ?, activity_type = ? WHERE id = ?',
@@ -137,7 +137,7 @@ module.exports = (io) => {
     socket.on('invite-to-server', (data) => {
       const { serverId, targetUserId } = data;
       const targetSocketId = userSockets.get(targetUserId);
-      
+
       if (targetSocketId) {
         io.to(targetSocketId).emit('server-invitation', {
           serverId,
@@ -147,7 +147,7 @@ module.exports = (io) => {
             avatar: currentUser?.avatar
           }
         });
-        
+
         // Store pending invitation temporarily
         if (!io.pendingInvites) io.pendingInvites = new Map();
         if (!io.pendingInvites.has(targetUserId)) {
@@ -156,15 +156,15 @@ module.exports = (io) => {
         io.pendingInvites.get(targetUserId).add(serverId);
       }
     });
-    
+
     socket.on('accept-server-invite', (serverId) => {
       if (!io.pendingInvites) io.pendingInvites = new Map();
-      
+
       // Remove from pending invitations
       for (const [userId, serverIds] of io.pendingInvites.entries()) {
         if (serverIds.has(serverId) && userId === currentUser?.id) {
           serverIds.delete(serverId);
-          
+
           // Join server
           socket.join(`server:${serverId}`);
           currentServer = serverId;
@@ -173,7 +173,7 @@ module.exports = (io) => {
             username: currentUser?.username,
             serverId
           });
-          
+
           // Notify all clients about updated members
           io.to(`server:${serverId}`).emit('server-members-updated', {
             serverId,
@@ -181,27 +181,27 @@ module.exports = (io) => {
             userId: currentUser?.id,
             username: currentUser?.username
           });
-          
+
           break;
         }
       }
     });
-    
+
     // Handle server joining (including invitation)
     socket.on('join-server', (serverId) => {
       currentServer = serverId;
       socket.join(`server:${serverId}`);
-      
+
       // Check if this is a new member
       const isNewMember = currentServer && !io.pendingInvites?.get(currentUser?.id)?.has(serverId);
-      
+
       if (isNewMember) {
         socket.to(`server:${serverId}`).emit('user-joined-server', {
           userId: currentUser?.id,
           username: currentUser?.username,
           serverId
         });
-        
+
         // Notify all clients about updated members
         io.to(`server:${serverId}`).emit('server-members-updated', {
           serverId,
@@ -230,7 +230,7 @@ module.exports = (io) => {
       }
       currentChannel = channelId;
       socket.join(`channel:${channelId}`);
-      
+
       socket.to(`channel:${channelId}`).emit('user-joined-channel', {
         userId: currentUser?.id,
         username: currentUser?.username,
@@ -250,7 +250,7 @@ module.exports = (io) => {
 
     socket.on('send-message', async (data) => {
       const { channelId, content, messageId, timestamp, replyToId, mentions } = data;
-      
+
       socket.to(`channel:${channelId}`).emit('new-message', {
         id: messageId,
         channel_id: channelId,
@@ -333,7 +333,7 @@ module.exports = (io) => {
     // Handle both 1-on-1 and group DMs
     socket.on('send-dm', (data) => {
       const { receiverId, content, messageId, timestamp, groupId } = data;
-      
+
       if (groupId) {
         // Add group creator info if exists
         const groupMembers = io.of('/').adapter.rooms.get(`group:${groupId}`);
@@ -347,13 +347,13 @@ module.exports = (io) => {
           group_id: groupId,
           member_count: groupMembers ? groupMembers.size : 1
         };
-        
+
         // Create group if it doesn't exist
         socket.join(`group:${groupId}`);
-        
+
         // Broadcast to group members
         io.to(`group:${groupId}`).emit('new-dm', groupData);
-        
+
         // Send to creator if they're not in the group
         if (!groupMembers) {
           const creatorId = groupId.split('_')[0]; // Assuming group ID format: "{creatorId}_..."
@@ -393,13 +393,13 @@ module.exports = (io) => {
 
     socket.on('join-voice', async (data) => {
       const { channelId, isVideo, serverId } = data;
-      
+
       if (!voiceChannels.has(channelId)) {
         voiceChannels.set(channelId, new Map());
       }
-      
+
       const channelUsers = voiceChannels.get(channelId);
-      
+
       // Check if there's an active call
       let call = activeCalls.get(channelId);
       if (!call) {
@@ -456,7 +456,7 @@ module.exports = (io) => {
       if (voiceChannels.has(channelId)) {
         const channelUsers = voiceChannels.get(channelId);
         channelUsers.delete(currentUser?.id);
-        
+
         const call = activeCalls.get(channelId);
         if (call) {
           call.participants.delete(currentUser?.id);
@@ -471,14 +471,14 @@ module.exports = (io) => {
           channelId
         });
       }
-      
+
       socket.leave(`voice:${channelId}`);
       currentCall = null;
     });
 
     socket.on('voice-state-update', (data) => {
       const { channelId, isMuted, isDeafened, isVideoOn, isScreenSharing } = data;
-      
+
       if (voiceChannels.has(channelId)) {
         const channelUsers = voiceChannels.get(channelId);
         const user = channelUsers.get(currentUser?.id);
@@ -609,12 +609,12 @@ module.exports = (io) => {
     });
 
     // ==================== WEBRTC CALLS ====================
-    
+
     // 1-on-1 call initiation
     socket.on('call-initiate', (data) => {
       const { targetUserId, callType, callId, offer } = data;
       const targetSocketId = userSockets.get(targetUserId);
-      
+
       if (targetSocketId) {
         io.to(targetSocketId).emit('incoming-call', {
           callId,
@@ -626,7 +626,7 @@ module.exports = (io) => {
             avatar: currentUser?.avatar
           }
         });
-        
+
         // Store call info
         if (!activeCalls.has(callId)) {
           activeCalls.set(callId, {
@@ -640,44 +640,46 @@ module.exports = (io) => {
             startedAt: Date.now()
           });
         }
-        
+
         console.log(`Call initiated: ${callId} from ${currentUser?.username} to user ${targetUserId}`);
       } else {
         // Target user is offline
         socket.emit('call-error', { callId, error: 'User is offline' });
       }
     });
-    
+
     // Accept call
     socket.on('call-accept', (data) => {
-      const { callId } = data;
+      const { callId, answer } = data;
       const call = activeCalls.get(callId);
-      
+
       if (call) {
         call.status = 'active';
-        
+
         // Notify caller
         const callerSocketId = userSockets.get(call.caller);
         if (callerSocketId) {
           io.to(callerSocketId).emit('call-accepted', {
             callId,
+            answer,
             callee: {
               id: currentUser?.id,
               username: currentUser?.username,
-              avatar: currentUser?.avatar
+              avatar: currentUser?.avatar,
+              callType: call.callType
             }
           });
         }
-        
+
         console.log(`Call accepted: ${callId} by ${currentUser?.username}`);
       }
     });
-    
+
     // Reject call
     socket.on('call-reject', (data) => {
       const { callId } = data;
       const call = activeCalls.get(callId);
-      
+
       if (call) {
         // Notify caller
         const callerSocketId = userSockets.get(call.caller);
@@ -687,17 +689,17 @@ module.exports = (io) => {
             reason: 'User declined the call'
           });
         }
-        
+
         activeCalls.delete(callId);
         console.log(`Call rejected: ${callId} by ${currentUser?.username}`);
       }
     });
-    
+
     // End call
     socket.on('call-end', (data) => {
       const { callId } = data;
       const call = activeCalls.get(callId);
-      
+
       if (call) {
         // Notify all participants
         call.participants.forEach(participantId => {
@@ -708,14 +710,14 @@ module.exports = (io) => {
             }
           }
         });
-        
+
         activeCalls.delete(callId);
         console.log(`Call ended: ${callId} by ${currentUser?.username}`);
       }
     });
-    
+
     // WebRTC signaling for calls - Direct Messaging
-    
+
     // Note: call-offer is no longer needed separately as it's sent in 'call-initiate', 
     // but we keep it for renegotiation if needed.
     socket.on('call-offer', (data) => {
@@ -729,7 +731,7 @@ module.exports = (io) => {
         });
       }
     });
-    
+
     socket.on('call-answer', (data) => {
       const { callId, targetUserId, answer } = data;
       const targetSocketId = userSockets.get(targetUserId);
@@ -741,7 +743,7 @@ module.exports = (io) => {
         });
       }
     });
-    
+
     socket.on('call-ice-candidate', (data) => {
       const { callId, targetUserId, candidate } = data;
       const targetSocketId = userSockets.get(targetUserId);
@@ -758,18 +760,18 @@ module.exports = (io) => {
 
     socket.on('disconnect', async () => {
       console.log(`User disconnected: ${socket.id}`);
-      
+
       if (currentUser) {
         await dbRun("UPDATE users SET status = 'offline', last_seen = datetime('now') WHERE id = ?", [currentUser.id]);
-        
+
         userSockets.delete(currentUser.id);
         userStatus.delete(currentUser.id);
-        
+
         // Leave voice channel
         if (currentCall && voiceChannels.has(currentCall)) {
           const channelUsers = voiceChannels.get(currentCall);
           channelUsers.delete(currentUser.id);
-          
+
           const call = activeCalls.get(currentCall);
           if (call) {
             call.participants.delete(currentUser.id);
@@ -777,14 +779,14 @@ module.exports = (io) => {
               activeCalls.delete(currentCall);
             }
           }
-          
+
           socket.to(`voice:${currentCall}`).emit('user-left-voice', {
             userId: currentUser.id,
             username: currentUser.username,
             channelId: currentCall
           });
         }
-        
+
         // Broadcast offline to friends
         const friends = await dbAll(`
           SELECT DISTINCT u.id FROM users u
