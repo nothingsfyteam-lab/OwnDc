@@ -2,6 +2,7 @@ const express = require('express');
 const session = require('express-session');
 const path = require('path');
 const http = require('http');
+const os = require('os');
 const { Server } = require('socket.io');
 const { initDatabase } = require('./db');
 const socketHandler = require('./socket');
@@ -14,6 +15,20 @@ const io = new Server(server, {
     methods: ["GET", "POST"]
   }
 });
+
+// Get local IP address
+function getLocalIP() {
+  const interfaces = os.networkInterfaces();
+  for (const name of Object.keys(interfaces)) {
+    for (const iface of interfaces[name]) {
+      // Skip internal and non-IPv4 addresses
+      if (iface.family === 'IPv4' && !iface.internal) {
+        return iface.address;
+      }
+    }
+  }
+  return 'localhost';
+}
 
 async function startServer() {
   try {
@@ -63,8 +78,12 @@ async function startServer() {
     socketHandler(io);
 
     const PORT = process.env.PORT || 3000;
-    server.listen(PORT, () => {
+    const HOST = '0.0.0.0'; // Listen on all network interfaces
+    const localIP = getLocalIP();
+
+    server.listen(PORT, HOST, () => {
       console.log(`🚀 OwnDc server running on http://localhost:${PORT}`);
+      console.log(`🌐 Network accessible at: http://${localIP}:${PORT}`);
       console.log(`📱 Open your browser and visit the URL above`);
     });
   } catch (error) {
