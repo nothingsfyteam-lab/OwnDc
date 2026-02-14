@@ -629,42 +629,30 @@ module.exports = (io) => {
     
     // WebRTC signaling for calls
     socket.on('call-offer', (data) => {
-      const { callId, targetUserId, offer } = data;
-      const targetSocketId = userSockets.get(targetUserId);
-      
-      if (targetSocketId) {
-        io.to(targetSocketId).emit('call-offer', {
-          callId,
-          userId: currentUser?.id,
-          offer
-        });
-      }
+      const { callId, offer } = data;
+      socket.to(`call:${callId}`).emit('call-offer', {
+        callId,
+        userId: currentUser?.id,
+        offer
+      });
     });
     
     socket.on('call-answer', (data) => {
-      const { callId, targetUserId, answer } = data;
-      const targetSocketId = userSockets.get(targetUserId);
-      
-      if (targetSocketId) {
-        io.to(targetSocketId).emit('call-answer', {
-          callId,
-          userId: currentUser?.id,
-          answer
-        });
-      }
+      const { callId, answer } = data;
+      socket.to(`call:${callId}`).emit('call-answer', {
+        callId,
+        userId: currentUser?.id,
+        answer
+      });
     });
     
     socket.on('call-ice-candidate', (data) => {
-      const { callId, targetUserId, candidate } = data;
-      const targetSocketId = userSockets.get(targetUserId);
-      
-      if (targetSocketId) {
-        io.to(targetSocketId).emit('call-ice-candidate', {
-          callId,
-          userId: currentUser?.id,
-          candidate
-        });
-      }
+      const { callId, candidate } = data;
+      socket.to(`call:${callId}`).emit('call-ice-candidate', {
+        callId,
+        userId: currentUser?.id,
+        candidate
+      });
     });
 
     // ==================== DISCONNECT ====================
