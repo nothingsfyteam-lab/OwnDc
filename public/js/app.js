@@ -297,11 +297,39 @@ async function changePassword() {
 
 // ==================== SOCKET.IO ====================
 function initializeSocket() {
-  socket = io();
+  // Get the correct socket URL
+  // For localhost: auto-detect
+  // For production/Railway: use current host
+  const socketURL = window.location.origin;
+  
+  socket = io(socketURL, {
+    reconnection: true,
+    reconnectionDelay: 1000,
+    reconnectionDelayMax: 5000,
+    reconnectionAttempts: Infinity,
+    transports: ['websocket', 'polling'],
+    secure: window.location.protocol === 'https:',
+    rejectUnauthorized: false,
+    forceNew: false
+  });
 
   socket.on('connect', () => {
-    console.log('Socket connected');
+    console.log('Socket connected to:', socketURL);
+    console.log('Socket ID:', socket.id);
     socket.emit('authenticate', currentUser.id);
+  });
+
+  socket.on('connect_error', (error) => {
+    console.error('Socket connection error:', error);
+    showNotification('Connection lost, reconnecting...', 'warning');
+  });
+
+  socket.on('disconnect', (reason) => {
+    console.log('Socket disconnected:', reason);
+    if (reason === 'io server disconnect') {
+      // Server has disconnected the user, try reconnecting
+      socket.connect();
+    }
   });
 
   socket.on('authenticated', (data) => {
@@ -1963,8 +1991,8 @@ async function acceptIncomingCall() {
     // Determine if this is a video call
     const isVideoCall = currentDirectCall.callType === 'video';
     
-    // Request microphone and optionally camera
-    const constraints = {
+    // Try with enhanced audio constraints first, fall back to basic if needed
+    let constraints = {
       audio: {
         echoCancellation: true,
         noiseSuppression: true,
@@ -1974,7 +2002,20 @@ async function acceptIncomingCall() {
     };
     
     console.log('Getting user media for call acceptance');
-    localStream = await navigator.mediaDevices.getUserMedia(constraints);
+    
+    try {
+      localStream = await navigator.mediaDevices.getUserMedia(constraints);
+    } catch (error) {
+      console.warn('Enhanced constraints failed, trying basic audio:', error.message);
+      
+      // Fallback: try with basic constraints
+      constraints = {
+        audio: true,
+        video: isVideoCall ? true : false
+      };
+      
+      localStream = await navigator.mediaDevices.getUserMedia(constraints);
+    }
     
     console.log('Got local stream:', localStream.getTracks().map(t => `${t.kind}(${t.enabled})`));
     
@@ -2082,8 +2123,8 @@ async function initiateDirectCall(friendId, friendName, friendAvatar, callType =
   try {
     console.log('Initiating', callType, 'call to', friendName);
     
-    // Request microphone and optionally camera
-    const constraints = { 
+    // Try with enhanced audio constraints first, fall back to basic if needed
+    let constraints = { 
       audio: {
         echoCancellation: true,
         noiseSuppression: true,
@@ -2093,7 +2134,20 @@ async function initiateDirectCall(friendId, friendName, friendAvatar, callType =
     };
     
     console.log('Requesting media with constraints:', constraints);
-    localStream = await navigator.mediaDevices.getUserMedia(constraints);
+    
+    try {
+      localStream = await navigator.mediaDevices.getUserMedia(constraints);
+    } catch (error) {
+      console.warn('Enhanced constraints failed, trying basic audio:', error.message);
+      
+      // Fallback: try with basic constraints
+      constraints = { 
+        audio: true,
+        video: callType === 'video' ? true : false
+      };
+      
+      localStream = await navigator.mediaDevices.getUserMedia(constraints);
+    }
     
     console.log('Got local stream with tracks:', localStream.getTracks().map(t => `${t.kind}(${t.enabled})`));
     
@@ -2109,7 +2163,7 @@ async function initiateDirectCall(friendId, friendName, friendAvatar, callType =
       }
     });
     
-    // Store video stream if it's a video call
+    // For video calls, also capture the video stream separately for fallback
     if (callType === 'video') {
       localVideoStream = localStream;
       directCallVideoOn = true;
@@ -2171,16 +2225,41 @@ async function initiateDirectCall(friendId, friendName, friendAvatar, callType =
 }
 
 function createDirectCallPeerConnection(remoteUserId) {
+  // Comprehensive ICE servers for both local and production environments
+  const iceServers = [
+    // Google STUN servers (reliable and free)
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun2.l.google.com:19302' },
+    { urls: 'stun:stun3.l.google.com:19302' },
+    { urls: 'stun:stun4.l.google.com:19302' },
+    
+    // Other reliable STUN servers
+    { urls: 'stun:numb.viagenie.ca:3478' },
+    { urls: 'stun:stun.stunprotocol.org:3478' },
+    { urls: 'stun:stunserver.stunprotocol.org:3478' },
+    
+    // Free TURN servers for production/Railway
+    // Note: These may have rate limits but are good for testing
+    {
+      urls: ['turn:turnserver.example.com:80', 'turn:turnserver.example.com:443?transport=tcp'],
+      username: 'example_username',
+      credential: 'example_password'
+    },
+    // OpenRelay TURN server (free, public)
+    {
+      urls: ['turn:openrelay.metered.ca:80', 'turn:openrelay.metered.ca:443', 'turn:openrelay.metered.ca:443?transport=tcp'],
+      username: 'openrelayproject',
+      credential: 'openrelayproject'
+    }
+  ];
+  
   const pc = new RTCPeerConnection({
-    iceServers: [
-      { urls: 'stun:stun.l.google.com:19302' },
-      { urls: 'stun:stun1.l.google.com:19302' },
-      { urls: 'stun:stun2.l.google.com:19302' },
-      { urls: 'stun:numb.viagenie.ca:3478' },
-      { urls: 'stun:stun.stunprotocol.org:3478' },
-      { urls: 'stun:stunserver.stunprotocol.org:3478' }
-    ]
+    iceServers: iceServers,
+    iceCandidatePoolSize: 10
   });
+  
+  console.log('Creating peer connection with', iceServers.length, 'ICE servers');
   
   // Add local stream tracks
   if (localStream) {
